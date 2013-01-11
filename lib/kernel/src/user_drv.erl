@@ -490,15 +490,20 @@ set_unicode_state(Iport, Bool) ->
 %% io_requests(Requests, InPort, OutPort)
 
 io_request({put_chars, unicode,Cs}, _Iport, Oport) ->
-    Oport ! {self(),{command,[?OP_PUTC|unicode:characters_to_binary(Cs,utf8)]}};
+    Oport ! {self(),{command,[?OP_PUTC|unicode:characters_to_binary(Cs,utf8)]}},
+    ok;
 io_request({move_rel,N}, _Iport, Oport) ->
-    Oport ! {self(),{command,[?OP_MOVE|put_int16(N, [])]}};
+    Oport ! {self(),{command,[?OP_MOVE|put_int16(N, [])]}},
+    ok;
 io_request({insert_chars,unicode,Cs}, _Iport, Oport) ->
-    Oport ! {self(),{command,[?OP_INSC|unicode:characters_to_binary(Cs,utf8)]}};
+    Oport ! {self(),{command,[?OP_INSC|unicode:characters_to_binary(Cs,utf8)]}},
+    ok;
 io_request({delete_chars,N}, _Iport, Oport) ->
-    Oport ! {self(),{command,[?OP_DELC|put_int16(N, [])]}};
+    Oport ! {self(),{command,[?OP_DELC|put_int16(N, [])]}},
+    ok;
 io_request(beep, _Iport, Oport) ->
-    Oport ! {self(),{command,[?OP_BEEP]}};
+    Oport ! {self(),{command,[?OP_BEEP]}},
+    ok;
 io_request({requests,Rs}, Iport, Oport) ->
     io_requests(Rs, Iport, Oport);
 io_request(_R, _Iport, _Oport) ->

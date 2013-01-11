@@ -256,14 +256,18 @@ do_cycle_port_program(Caller, Parent, Port, Cmd) ->
     end.
     
 
-%% "Beates" the heart once.
-send_heart_beat(Port) -> Port ! {self(), {command, [?HEART_BEAT]}}.
+%% "Beats" the heart once.
+send_heart_beat(Port) ->
+    Port ! {self(), {command, [?HEART_BEAT]}},
+    ok.
 
 %% Set a new HEART_COMMAND.
 send_heart_cmd(Port, []) ->
-    Port ! {self(), {command, [?CLEAR_CMD]}};
+    Port ! {self(), {command, [?CLEAR_CMD]}},
+    ok;
 send_heart_cmd(Port, Cmd) ->
-    Port ! {self(), {command, [?SET_CMD|Cmd]}}.
+    Port ! {self(), {command, [?SET_CMD|Cmd]}},
+    ok.
 
 get_heart_cmd(Port) ->
     Port ! {self(), {command, [?GET_CMD]}},
@@ -273,7 +277,9 @@ get_heart_cmd(Port) ->
     end.
 
 %% Sends shutdown command to the port.
-send_shutdown(Port) -> Port ! {self(), {command, [?SHUT_DOWN]}}.
+send_shutdown(Port) ->
+    Port ! {self(), {command, [?SHUT_DOWN]}},
+    ok.
 
 %% We must report using erlang:display/1 since we don't know whether
 %% there is an error_logger available or not.

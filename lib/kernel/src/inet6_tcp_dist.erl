@@ -100,7 +100,8 @@ controller(Kernel, Socket) ->
             flush_controller(Pid, Socket),
             inet6_tcp:controlling_process(Socket, Pid),
             flush_controller(Pid, Socket),
-            Pid ! {self(), controller};
+            Pid ! {self(), controller},
+            ok;
         {Kernel, unsupported_protocol} ->
             exit(unsupported_protocol)
     end.

@@ -91,7 +91,7 @@ get_fd_geometry(Port) ->
 %% NewSaveBuffer = io_request(Request, FromPid, ReplyAs, Port, SaveBuffer)
 
 do_io_request(Req, From, ReplyAs, Port) ->
-    {_Status,Reply}  = io_request(Req, Port),
+    {_Status,Reply} = io_request(Req, Port),
     io_reply(From, ReplyAs, Reply).
 
 %% New in R13B
@@ -163,15 +163,16 @@ put_port(List, Port) ->
 %% send_port(Port, Command)
 
 send_port(Port, Command) ->
-    Port ! {self(),Command}.
-
+    Port ! {self(),Command},
+    ok.
 
 %% io_reply(From, ReplyAs, Reply)
 %%  The function for sending i/o command acknowledgement.
 %%  The ACK contains the return value.
 
 io_reply(From, ReplyAs, Reply) ->
-    From ! {io_reply,ReplyAs,Reply}.
+    From ! {io_reply,ReplyAs,Reply},
+    ok.
 
 %% put_chars
 put_chars(Chars, Port) when is_binary(Chars) ->

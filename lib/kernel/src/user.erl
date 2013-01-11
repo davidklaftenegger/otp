@@ -292,7 +292,8 @@ send_port(Port, Command) ->
 %%  The ACK contains the return value.
 
 io_reply(From, ReplyAs, Reply) ->
-    From ! {io_reply,ReplyAs,Reply}.
+    From ! {io_reply,ReplyAs,Reply},
+    ok.
 
 %% put_chars
 put_chars(Chars, Port, Q) when is_binary(Chars) ->
