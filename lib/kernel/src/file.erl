@@ -88,7 +88,7 @@
                    | {'cur', Offset :: integer()}
 		   | {'eof', Offset :: integer()} | 'bof' | 'cur' | 'eof'.
 -type mode()      :: 'read' | 'write' | 'append'
-                   | 'exclusive' | 'raw' | 'binary'
+                   | 'exclusive' | 'raw' | 'binary' | 'ram'
 		   | {'delayed_write',
                       Size :: non_neg_integer(),
                       Delay :: non_neg_integer()}
