@@ -828,6 +828,12 @@ file_stop(ErlDrvData e)
     if (desc->read_binp) {
 	driver_free_binary(desc->read_binp);
     }
+    while (desc->cq_head) {
+        struct t_data *n = desc->cq_head->next;
+        void (*f)(void *) = desc->cq_head->free;
+        f(desc->cq_head);
+        desc->cq_head = n;
+    }
     EF_FREE(desc);
 }
 
