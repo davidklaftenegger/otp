@@ -129,17 +129,18 @@ get_tcp_address(Socket) ->
 accept_loop(Proxy, erts = Type, Listen, Extra) ->
     process_flag(priority, max),
     case gen_tcp:accept(Listen) of
-		{ok, Socket} ->
-		    Extra ! {accept,self(),Socket,inet,proxy},
-		    receive 
-			{_Kernel, controller, Pid} ->
-			    ok = gen_tcp:controlling_process(Socket, Pid),
-			    flush_old_controller(Pid, Socket),
-			    Pid ! {self(), controller};
-			{_Kernel, unsupported_protocol} ->
-			    exit(unsupported_protocol)
-		    end;
-		Error ->
+	{ok, Socket} ->
+	    Extra ! {accept,self(),Socket,inet,proxy},
+	    receive
+		{_Kernel, controller, Pid} ->
+		    ok = gen_tcp:controlling_process(Socket, Pid),
+		    flush_old_controller(Pid, Socket),
+		    Pid ! {self(), controller},
+		    ok;
+		{_Kernel, unsupported_protocol} ->
+		    exit(unsupported_protocol)
+	    end;
+	Error ->
 	    exit(Error)
     end,
     accept_loop(Proxy, Type, Listen, Extra);

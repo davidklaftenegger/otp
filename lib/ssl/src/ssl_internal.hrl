@@ -36,7 +36,7 @@
 -type tls_version()       :: {integer(), integer()}.
 -type tls_atom_version()  :: sslv3 | tlsv1 | 'tlsv1.1' | 'tlsv1.2'.
 -type certdb_ref()        :: reference().
--type db_handle()         :: term().
+-type db_handle()         :: ets:tid().
 -type key_algo()          :: null | rsa | dhe_rsa | dhe_dss | dh_anon.
 -type der_cert()          :: binary().
 -type private_key()       :: #'RSAPrivateKey'{} | #'DSAPrivateKey'{}.

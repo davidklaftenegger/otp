@@ -401,7 +401,9 @@ hello(#server_hello{cipher_suite = CipherSuite,
 				       State#state{connection_states = ConnectionStates});
 		false ->
 		    handle_resumed_session(NewId, State#state{connection_states = ConnectionStates}) 
-	    end
+	    end;
+	#alert{} = Alert ->
+	    handle_own_alert(Alert, ReqVersion, hello, State0)
     end;
 
 hello(Hello = #client_hello{client_version = ClientVersion},
@@ -2526,12 +2528,13 @@ default_hashsign(_Version, KeyExchange)
 start_or_recv_cancel_timer(infinity, _RecvFrom) ->
     undefined;
 start_or_recv_cancel_timer(Timeout, RecvFrom) ->
-    erlang:send_after(Timeout, self(), {cancel_start_or_recv, RecvFrom}).    
+    erlang:send_after(Timeout, self(), {cancel_start_or_recv, RecvFrom}).
 
 cancel_timer(undefined) ->
     ok;
 cancel_timer(Timer) ->
-    erlang:cancel_timer(Timer).
+    _ = erlang:cancel_timer(Timer),
+    ok.
 
 handle_unrecv_data(StateName, #state{socket = Socket, transport_cb = Transport} = State) ->
     inet:setopts(Socket, [{active, false}]),

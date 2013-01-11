@@ -18,10 +18,11 @@
 %%
 
 %%----------------------------------------------------------------------
-%% Purpose: Storage for trused certificats 
+%% Purpose: Storage for trusted certificates 
 %%----------------------------------------------------------------------
 
 -module(ssl_certificate_db).
+
 -include("ssl_internal.hrl").
 -include_lib("public_key/include/public_key.hrl").
 -include_lib("kernel/include/file.hrl").
@@ -37,7 +38,7 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
--spec create() -> [db_handle()].
+-spec create() -> [db_handle(),...].
 %% 
 %% Description: Creates a new certificate db.
 %% Note: lookup_trusted_cert/4 may be called from any process but only
@@ -54,7 +55,7 @@ create() ->
     ].
 
 %%--------------------------------------------------------------------
--spec remove([db_handle()]) -> term().
+-spec remove([db_handle()]) -> ok.
 %%
 %% Description: Removes database db  
 %%--------------------------------------------------------------------
@@ -114,8 +115,8 @@ add_trusted_certs(_Pid, File, [CertsDb, RefDb, PemChache] = Db) ->
 	    new_trusted_cert_entry({MD5, File}, Db)
     end.
 %%--------------------------------------------------------------------
--spec cache_pem_file({binary(), binary()}, [db_handle()]) -> term().
--spec cache_pem_file(reference(), {binary(), binary()}, [db_handle()]) -> term().
+-spec cache_pem_file({binary(), binary()}, [db_handle()]) -> {ok, term()}.
+-spec cache_pem_file(reference(), {binary(), binary()}, [db_handle()]) -> {ok, term()}.
 %%
 %% Description: Cache file as binary in DB
 %%--------------------------------------------------------------------
@@ -135,15 +136,16 @@ remove_trusted_certs(Ref, CertsDb) ->
     remove_certs(Ref, CertsDb).
 
 %%--------------------------------------------------------------------
--spec remove(term(), db_handle()) -> term().
+-spec remove(term(), db_handle()) -> ok.
 %%
 %% Description: Removes an element in a <Db>.
 %%--------------------------------------------------------------------
 remove(Key, Db) ->
-    _ = ets:delete(Db, Key).
+    ets:delete(Db, Key),
+    ok.
 
 %%--------------------------------------------------------------------
--spec lookup(term(), db_handle()) -> term() | undefined.
+-spec lookup(term(), db_handle()) -> [term()] | undefined.
 %%
 %% Description: Looks up an element in a <Db>.
 %%--------------------------------------------------------------------
@@ -158,7 +160,7 @@ lookup(Key, Db) ->
 	    [Pick(Data) || Data <- Contents]
     end.
 %%--------------------------------------------------------------------
--spec foldl(fun(), term(), db_handle()) -> term().
+-spec foldl(fun((_,_) -> term()), term(), db_handle()) -> term().
 %%
 %% Description: Calls Fun(Elem, AccIn) on successive elements of the
 %% cache, starting with AccIn == Acc0. Fun/2 must return a new
@@ -194,30 +196,33 @@ db_size(Db) ->
     ets:info(Db, size).
 
 %%--------------------------------------------------------------------
-%%-spec insert(Key::term(), Data::term(), Db::db_handle()) -> no_return().
+-spec insert(Key::term(), Data::term(), Db::db_handle()) -> 'ok'.
 %%
 %% Description: Inserts data into <Db>
 %%--------------------------------------------------------------------
 insert(Key, Data, Db) ->
-    true = ets:insert(Db, {Key, Data}).
+    true = ets:insert(Db, {Key, Data}),
+    ok.
 
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
 update_counter(Key, Count, Db) ->
-    true = ets:insert(Db, {Key, Count}).
+    true = ets:insert(Db, {Key, Count}),
+    ok.
 
 remove_certs(Ref, CertsDb) ->
-    ets:match_delete(CertsDb, {{Ref, '_', '_'}, '_'}).
+    ets:match_delete(CertsDb, {{Ref, '_', '_'}, '_'}),
+    ok.
 
 add_certs_from_der(DerList, Ref, CertsDb) ->
-    Add = fun(Cert) -> add_certs(Cert, Ref, CertsDb) end,
-     [Add(Cert) || Cert <- DerList].
+    lists:foreach(fun(Cert) -> add_certs(Cert, Ref, CertsDb) end, DerList).
 
 add_certs_from_pem(PemEntries, Ref, CertsDb) ->
     Add = fun(Cert) -> add_certs(Cert, Ref, CertsDb) end,
-    [Add(Cert) || {'Certificate', Cert, not_encrypted} <- PemEntries].
-    
+    _ = [Add(Cert) || {'Certificate', Cert, not_encrypted} <- PemEntries],
+    ok.
+
 add_certs(Cert, Ref, CertsDb) ->
     try  ErlCert = public_key:pkix_decode_cert(Cert, otp),
 	 TBSCertificate = ErlCert#'OTPCertificate'.tbsCertificate,

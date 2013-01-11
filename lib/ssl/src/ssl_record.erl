@@ -708,8 +708,7 @@ sufficient_tlsv1_2_crypto_support() ->
     Data2 = "e #1",
     Key = <<0,1,2,3,16,17,18,19,32,33,34,35,48,49,50,51,4,5,6,7,20,21,22,23,36,37,38,39,
 	    52,53,54,55,8,9,10,11,24,25,26,27,40,41,42,43,56,57,58,59>>,
-    try
-	crypto:sha256_mac(Key, lists:flatten([Data, Data2])),
-	true
+    try crypto:sha256_mac(Key, lists:flatten([Data, Data2])) of
+	_ -> true
     catch _:_ -> false
     end.
