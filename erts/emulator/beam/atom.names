@@ -237,12 +237,15 @@ atom gc_end
 atom gc_start
 atom Ge='>='
 atom generational
+atom generic_interface
 atom get_seq_token
 atom get_tcw
 atom getenv
 atom gather_sched_wall_time_result
 atom getting_linked
 atom getting_unlinked
+atom gi_options
+atom gi_type
 atom global
 atom Gt='>'
 atom grun
@@ -504,7 +507,6 @@ atom stderr_to_stdout
 atom stop
 atom stream
 atom sunrm
-atom generic_interface
 atom suspend
 atom suspended
 atom suspending
