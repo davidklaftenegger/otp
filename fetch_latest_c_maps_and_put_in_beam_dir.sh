@@ -8,3 +8,5 @@ git clone git://github.com/davidklaftenegger/c_maps.git
 
 cp c_maps/*.c $BEAM_DIR
 cp c_maps/*.h $BEAM_DIR
+cp c_maps/*.cpp $BEAM_DIR
+cp c_maps/*.hpp $BEAM_DIR
