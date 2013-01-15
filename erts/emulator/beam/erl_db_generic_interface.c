@@ -218,11 +218,7 @@ int db_create_generic_interface(Process *p, DbTable *tbl)
 		printf("\noption is %s\n", ol_ptr->option.first.name);
 		ol_ptr = ol_ptr->next;
 	    }
-	    /* ds = new_cppset_default(); */
-	    ds = new_skiplist((int (*)(void *, void *))compare,
-			     free, 
-			     malloc, 
-			     sizeof(DbTerm) - sizeof(Eterm) + sizeof(Eterm) * tbl->common.keypos);
+	    ds = new_cppset_default();
 
 	    break;
 	case ERROR_NO_TYPE:
