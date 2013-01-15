@@ -40,6 +40,7 @@
 #include "error.h"
 #define ERTS_WANT_DB_INTERNAL__
 #include "erl_db.h"
+#include "erl_db_generic_interface.h"
 #include "bif.h"
 #include "big.h"
 
@@ -1276,6 +1277,8 @@ BIF_RETTYPE ets_new_2(BIF_ALIST_2)
     Eterm val;
     Eterm ret;
     Eterm heir;
+    enum gi_type gi_type_setting = ERROR_NO_TYPE;
+    struct gi_options_list* options_list = NULL;
     UWord heir_data;
     Uint32 status;
     Sint keypos;
@@ -1360,6 +1363,43 @@ BIF_RETTYPE ets_new_2(BIF_ALIST_2)
 		    }
 #endif
 		    
+		}
+		else if (tp[1] == am_gi_type) {
+			gi_type_setting = get_gi_subtype(tp[2]);
+		}
+		else if (tp[1] == am_gi_options) {
+		    Eterm gi_list = tp[2];
+		    struct gi_options_list** current = &options_list;
+		    while(is_list(gi_list)) {
+			struct gi_option option;
+			Eterm gi_val = CAR(list_val(gi_list));
+			if(is_tuple(gi_val)) {
+			    Eterm *gi_tp = tuple_val(gi_val);
+			    if(arityval(gi_tp[0]) == 2) {
+				if(is_atom(gi_tp[1]) && is_atom(gi_tp[2])) {
+				    option.type = ATOM;
+				    option.first.name = atom_name(gi_tp[1]);
+				    option.second.name = atom_name(gi_tp[2]);
+				} else if(is_atom(gi_tp[1]) && is_small(gi_tp[2])) {
+				    option.type = INTEGER;
+				    option.first.name =  atom_name(gi_tp[1]);
+				    option.second.number = signed_val(gi_tp[2]);
+				} else break;
+			    } else break;
+			} else if(is_atom(gi_val)) {
+			    option.type = SETTING;
+			    option.first.name = atom_name(gi_val);
+			    option.second.name = NULL;
+			} else break;
+			*current = (struct gi_options_list*) malloc(sizeof(struct gi_options_list));
+			(*current)->option = option;
+			(*current)->next = NULL;
+			current = &((*current)->next);
+			gi_list = CDR(list_val(gi_list));
+		    }
+		    if (is_not_nil(gi_list)) { /* bad opt or not a well formed list */
+			break; /* go to normal error handling */
+		    }
 		}
 		else if (tp[1] == am_heir && tp[2] == am_none) {
 		    heir = am_none;
@@ -1454,6 +1494,11 @@ BIF_RETTYPE ets_new_2(BIF_ALIST_2)
     tb->common.fixations = NULL;
     tb->common.compress = is_compressed;
 
+    if (IS_GENERIC_INTERFACE_TABLE(tb->common.status)) {
+	((DbTableGenericInterface*) tb)->options = options_list;
+	((DbTableGenericInterface*) tb)->type = gi_type_setting;
+    }
+    
 #ifdef DEBUG
     cret = 
 #endif
