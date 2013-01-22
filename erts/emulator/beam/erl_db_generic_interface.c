@@ -14,7 +14,7 @@
 #include "big.h"
 #include "export.h"
 #include "erl_binary.h"
-#include "skiplist.h"
+#include "erl_db_generic_interface_ds.h"
 
 
 #include "erl_debug.h"
@@ -204,7 +204,7 @@ int db_create_generic_interface(Process *p, DbTable *tbl)
 
     switch(tb->type) {
 	case SKIPLIST:
-	   printf("THIS IS A SKIPLIST\n"); 
+	   printf("THIS IS A SKIPLIST\n\r"); 
 	    ds = 
 		new_skiplist((int (*)(void *, void *))compare,
 			     free, 
@@ -213,9 +213,10 @@ int db_create_generic_interface(Process *p, DbTable *tbl)
 
 	    break;
 	case TESTMAP:
+	   printf("THIS IS NOT A SKIPLIST, tbl keypos: %d\n\r", tbl->common.keypos); 
 	    ol_ptr = tb->options;
 	    while(ol_ptr) {
-		printf("\noption is %s\n", ol_ptr->option.first.name);
+		printf("option is %s\n\r", ol_ptr->option.first.name);
 		ol_ptr = ol_ptr->next;
 	    }
 	    ds = new_cppset_default();
@@ -224,7 +225,7 @@ int db_create_generic_interface(Process *p, DbTable *tbl)
 	case ERROR_NO_TYPE:
 	default:
 	    /* this should never happen */
-	    printf("eRROR ErROR ERrOR ERRoR ERROr\nExpect a segfault next.\n"); 
+	    printf("eRROR ErROR ERrOR ERRoR ERROr\n\rExpect a segfault next.\n\r"); 
 	    ds = NULL;
     }
     tb->kvset = ds;
@@ -499,11 +500,4 @@ char* atom_name(Eterm e) {
     strncpy(res, (char*)a->name, a->len);
     res[a->len] = '\0';
     return res;
-}
-
-enum gi_type get_gi_subtype(Eterm e) {
-    char* name = atom_name(e);
-    if(!strcmp(name, "skiplist")) return SKIPLIST;
-    else if(!strcmp(name, "testmap")) return TESTMAP;
-    else return ERROR_NO_TYPE;
 }

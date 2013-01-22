@@ -1,7 +1,10 @@
 #ifndef _DB_SUBTABLE_HASH_H
 #define _DB_SUBTABLE_HASH_H
 
+#include "erl_db_util.h" /* DbTerm & DbTableCommon */
+
 #include "kvset.h"
+#include "erl_db_generic_interface_ds.h"
 
 #define KJELL_DEBUG 1
 
@@ -13,14 +16,6 @@
 
 char* atom_name(Eterm e);
 void db_initialize_generic_interface(void);
-
-enum gi_type {
-    SKIPLIST,
-    TESTMAP,
-    ERROR_NO_TYPE
-};
-
-enum gi_type get_gi_subtype(Eterm e);
 
 enum gi_option_type {
     SETTING,
