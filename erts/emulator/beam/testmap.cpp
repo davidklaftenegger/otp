@@ -14,7 +14,6 @@ int cmp(Eterm, Eterm);
 int testcompare(DbTerm* key1, DbTerm* key2, void*) {
 	auto a = key1->tpl[1];
 	auto b = key2->tpl[1];
-//	std::printf("a: %li - b: %li\n\r", a, b);
 	return cmp(a, b);
 /*    return cmp_rel(*key2,
                    key2,

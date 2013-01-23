@@ -38,9 +38,6 @@ struct standard_functions {
 	/** @brief comparision function wrapper */
 	static int compare(KeyType a, KeyType b, Additional add) { return Compare(a, b, add); }
 	static bool compare(KeyType a, KeyType b) {
-//		std::printf("a: %lli - b: %lli\n\r", *a, *b);
-//		if (!(*b)) return false;
-//		if (!(*a)) return true;
 		return ((Compare(a, b, nullptr)) < 0);
 	}
 	
