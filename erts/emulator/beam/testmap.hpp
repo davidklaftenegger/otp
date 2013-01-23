@@ -30,7 +30,7 @@ DbTerm* do_horrible_thing(DbTerm* key) {
 	return mkey;
 }
 
-template<typename KeyType = long*, class StdFuns = standard_functions<KeyType>>
+template<typename KeyType = long*, class StdFuns = standard_functions<KeyType>, typename ValueType = KeyType>
 class testmap {
 	class Cmp {
 		public: bool operator()(KeyType k1, KeyType k2) const {

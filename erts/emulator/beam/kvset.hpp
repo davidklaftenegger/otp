@@ -17,6 +17,57 @@
 template<typename K, typename  A>
 int default_compare(K a, K b, A) { return b - a; }
 
+/**
+ * @internal
+ * @brief type disambiguation for specialization below
+ */
+template<typename T1, typename T2>
+class comparison_types {
+	typedef T1 type1;
+	typedef T2 type2;
+};
+
+/**
+ * @brief a comparator object
+ * @param KeyType the Type on which comparison works
+ * @param S a function bundle that specifies the comparision on KeyType
+ * @param Extractor a functor that transforms compatible types into KeyType
+ */
+template<
+	typename KeyType,
+	bool (*Compare)(KeyType, KeyType),
+	class Extractor
+>
+class KVcompare {
+	public:
+		/**
+		 * @brief comparison operator()
+		 * 
+		 * This uses one of the four implementations below,
+		 * relying on Extractor as needed
+		 */
+		template<typename T1, typename T2>
+		bool operator()(T1 t1, T2 t2) const {
+			return compare(t1, t2, comparison_types<T1, T2>());
+		}
+	private:
+		bool compare(KeyType k1, KeyType k2, comparison_types<KeyType, KeyType>) const {
+			return Compare(k1, k2);
+		}
+		template<typename T>
+		bool compare(T v1, KeyType k2, comparison_types<T, KeyType>) const {
+			return Compare(Extractor(v1), k2);
+		}
+		template<typename T>
+		bool compare(KeyType k1, T v2, comparison_types<KeyType, T>) const {
+			return Compare(k1, Extractor(v2));
+		}
+		template<typename T1, typename T2>
+		bool compare(T1 v1, T2 v2, comparison_types<T1, T2>) const {
+			return Compare(Extractor(v1), Extractor(v2));
+		}
+};
+
 
 /**
  * @internal
@@ -73,13 +124,14 @@ struct kv_set_t {
 template <typename Instance>
 class kv_set_classfuns {
 	typedef typename Instance::key_type KeyType;
-	typedef typename Instance::value_type Obj;
+	typedef typename Instance::value_type ValueType;
+	typedef typename Instance::impl_type Obj;
 	public:
 		static void* put(kv_set* s, void* key) {
 			auto result = reinterpret_cast<kv_set_t<Obj>*>(s)->
 				type_specific_data.
 				put(
-					static_cast<KeyType>(key)
+					static_cast<ValueType>(key)
 				);
 			return static_cast<void*>(result);
 		}
@@ -87,7 +139,7 @@ class kv_set_classfuns {
 			auto result = reinterpret_cast<kv_set_t<Obj>*>(s)->
 				type_specific_data.
 				put_new(
-					static_cast<KeyType>(key)
+					static_cast<ValueType>(key)
 				);
 			return result;
 		}
@@ -124,25 +176,26 @@ class kv_set_classfuns {
  *
  * This wrapper simply adds a few convenience typedefs to the DataType implementation.
  */
-template <template<typename, class> class DataType, typename KeyType, class StdFuns = standard_functions<KeyType>>
+template <template<typename, class, typename> class DataType, typename KeyType, class StdFuns = standard_functions<KeyType>, typename ValueType = KeyType>
 class kv_set_instance {
-	typedef DataType<KeyType, StdFuns> Impl;
+	typedef DataType<KeyType, StdFuns, ValueType> Impl;
 	public:
 		kv_set_instance() : inst() {}
-		KeyType put(KeyType key)     { return inst.put(key); }
-		bool put_new(KeyType key)    { return inst.put_new(key); }
-		KeyType remove(KeyType key)  { return inst.remove(key); }
-		KeyType lookup(KeyType key)  { return inst.lookup(key); }
-		bool member(KeyType key)     { return inst.member(key); }
-		KeyType first()              { return inst.first(); }
-		KeyType last()               { return inst.last(); }
-		KeyType next(KeyType key)    { return inst.next(key); }
-		KeyType previous(KeyType key){ return inst.previous(key); }
+		ValueType put(ValueType key)   { return inst.put(key); }
+		bool put_new(ValueType key)    { return inst.put_new(key); }
+		ValueType remove(KeyType key)  { return inst.remove(key); }
+		ValueType lookup(KeyType key)  { return inst.lookup(key); }
+		bool member(KeyType key)       { return inst.member(key); }
+		ValueType first()              { return inst.first(); }
+		ValueType last()               { return inst.last(); }
+		ValueType next(KeyType key)    { return inst.next(key); } // TODO check Key/Value input parameter
+		ValueType previous(KeyType key){ return inst.previous(key); } // TODO see line above.
 		
 		typedef kv_set_classfuns<kv_set_instance<DataType, KeyType, StdFuns>> classfuns;
 		typedef StdFuns stdfuns;
 		typedef KeyType key_type;
-		typedef Impl value_type;
+		typedef ValueType value_type;
+		typedef Impl impl_type;
 	private:
 		Impl inst;
 };
@@ -159,9 +212,9 @@ class kv_set_instance {
  * This cannot be a member function of the structure to be freed,
  * so it is implemented as a separate template function.
  */
-template <template<typename, class> class Impl, typename K, class S>
+template <template<typename, class, typename> class Impl, typename K, class S, typename V = K>
 void delete_table(kv_set* set, void (*f)(void* context, void* element), void* context) {
-	typedef kv_set_instance<Impl, K, S> FS;
+	typedef kv_set_instance<Impl, K, S, V> FS;
 	//TODO delete elements in table here
 	reinterpret_cast<kv_set_t<FS>*>(set)->type_specific_data.~FS();
 	FS::stdfuns::free(set);
@@ -181,13 +234,13 @@ void delete_table(kv_set* set, void (*f)(void* context, void* element), void* co
  * Remember that you have to collect the allocated memory using
  * destroy_kv_set(kvs);
  */
-template <template<typename, class> class Impl, typename K = long*, class S = standard_functions<K>>
+template <template<typename, class, typename> class Impl, typename K = long*, class S = standard_functions<K>, typename V = K>
 kv_set* make_kv_set() {
-	typedef kv_set_instance<Impl, K, S> FS;
+	typedef kv_set_instance<Impl, K, S, V> FS;
 	void* memory = FS::stdfuns::alloc(sizeof(KVSet) + sizeof(FS));
 	kv_set* r = static_cast<kv_set*>(memory);
 	new (&r->type_specific_data) FS;
-	r->funs.delete_table = &delete_table<Impl, K, S>;
+	r->funs.delete_table = &delete_table<Impl, K, S, V>;
 	r->funs.put = &FS::classfuns::put;
 	r->funs.put_new = &FS::classfuns::put_new;
 	r->funs.remove = &FS::classfuns::remove;
