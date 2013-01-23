@@ -1,4 +1,3 @@
-
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
@@ -16,9 +15,7 @@
 #include "erl_binary.h"
 #include "erl_db_generic_interface_ds.h"
 
-
 #include "erl_debug.h"
-
 
 //Public interface
 int db_create_generic_interface(Process *p, DbTable* tb);
@@ -160,10 +157,6 @@ DbTableMethod db_generic_interface =
         db_finalize_dbterm_generic_interface
     };
 
-//Internal functions prototypes
-int compare(Eterm * element, Eterm * key);
-
-
 //Function declarations
 void db_initialize_generic_interface(){
 
@@ -187,48 +180,11 @@ static ERTS_INLINE DbTerm * new_dbterm(DbTable *tb, Eterm obj)
     return p;
 }
 
-int compare(Eterm * key1, Eterm * key2)
-{
-    return cmp_rel(*key2,
-                   key2,
-                   *key1, 
-                   key1);
-}
-
-
 int db_create_generic_interface(Process *p, DbTable *tbl)
 {
     DbTableGenericInterface *tb = &tbl->generic_interface;
-    KVSet* ds;
-    struct gi_options_list* ol_ptr;
-
-    switch(tb->type) {
-	case SKIPLIST:
-	   printf("THIS IS A SKIPLIST\n\r"); 
-	    ds = 
-		new_skiplist((int (*)(void *, void *))compare,
-			     free, 
-			     malloc, 
-			     sizeof(DbTerm) - sizeof(Eterm) + sizeof(Eterm) * tbl->common.keypos);
-
-	    break;
-	case TESTMAP:
-	   printf("THIS IS NOT A SKIPLIST, tbl keypos: %d\n\r", tbl->common.keypos); 
-	    ol_ptr = tb->options;
-	    while(ol_ptr) {
-		printf("option is %s\n\r", ol_ptr->option.first.name);
-		ol_ptr = ol_ptr->next;
-	    }
-	    ds = new_cppset_default();
-
-	    break;
-	case ERROR_NO_TYPE:
-	default:
-	    /* this should never happen */
-	    printf("eRROR ErROR ERrOR ERRoR ERROr\n\rExpect a segfault next.\n\r"); 
-	    ds = NULL;
-    }
-    tb->kvset = ds;
+    
+    tb->kvset = gi_create(tb);
     
     /* free the gi_options linked list again */
     while(tb->options) {
@@ -245,7 +201,7 @@ int db_create_generic_interface(Process *p, DbTable *tbl)
 	free(delme);
     }
 
-    if(ds) return DB_ERROR_NONE;
+    if(tb->kvset) return DB_ERROR_NONE;
     else return DB_ERROR_UNSPEC;
 }
 

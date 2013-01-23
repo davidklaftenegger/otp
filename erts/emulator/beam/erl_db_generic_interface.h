@@ -2,9 +2,8 @@
 #define _DB_SUBTABLE_HASH_H
 
 #include "erl_db_util.h" /* DbTerm & DbTableCommon */
-
+#include "erl_db_generic_interface_ds.h" /* gi_type & gi_options_list */
 #include "kvset.h"
-#include "erl_db_generic_interface_ds.h"
 
 #define KJELL_DEBUG 1
 
