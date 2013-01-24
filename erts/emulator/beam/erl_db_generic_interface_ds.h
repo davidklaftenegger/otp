@@ -6,6 +6,8 @@
 enum gi_type {
     SKIPLIST,
     TESTMAP,
+    STLSET,
+    STLMAP,
     ERROR_NO_TYPE
 };
 
@@ -17,6 +19,8 @@ KVSet* gi_create(struct db_table_generic_interface* tbl);
 /* prototypes for the construction functions used in gi_create implementation */
 #include "skiplist.h"
 KVSet* new_cppset_default(void);
+KVSet* create_stlset(void);
+KVSet* create_stlmap(void);
 
 /* commonly used by C-implemented datastructures */
 int compare(Eterm * element, Eterm * key);

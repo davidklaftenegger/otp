@@ -24,6 +24,8 @@ enum gi_type get_gi_subtype(Eterm e) {
     char* name = atom_name(e);
     if(!strcmp(name, "skiplist")) return SKIPLIST;
     else if(!strcmp(name, "testmap")) return TESTMAP;
+    else if(!strcmp(name, "stlset")) return STLSET;
+    else if(!strcmp(name, "stlmap")) return STLMAP;
     else return ERROR_NO_TYPE;
 }
 
@@ -34,7 +36,6 @@ KVSet* gi_create(DbTableGenericInterface* tbl) {
 
     switch(tbl->type) {
 	case SKIPLIST:
-	   printf("THIS IS A SKIPLIST\n\r"); 
 	   ds = new_skiplist((int (*)(void *, void *))compare,
 			     free, 
 			     malloc, 
@@ -42,13 +43,18 @@ KVSet* gi_create(DbTableGenericInterface* tbl) {
 
 	    break;
 	case TESTMAP:
-	   printf("THIS IS NOT A SKIPLIST, tbl keypos: %d\n\r", tbl->common.keypos); 
 	    while(options_list) {
 		printf("option is %s\n\r", options_list->option.first.name);
 		options_list = options_list->next;
 	    }
 	    ds = new_cppset_default();
 
+	    break;
+	case STLSET:
+	    ds = create_stlset();
+	    break;
+	case STLMAP:
+	    ds = create_stlmap();
 	    break;
 	case ERROR_NO_TYPE:
 	default:
