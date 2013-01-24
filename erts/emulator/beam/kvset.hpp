@@ -2,7 +2,6 @@
 #define KVSET_HPP KVSET_HPP
 
 #include <cstdlib>
-#include <cstdio>
 #include "kvset.h"
 
 /**
@@ -20,9 +19,10 @@ int default_compare(K a, K b, A) { return b - a; }
 template<typename T>
 class Null {
 	public:
-		T operator()(T* t) {
+		T operator()(T t) {
 			return t;
 		}
+		typedef T key_type;
 };
 template<typename T> using NullExtractor = Null<T>;
 template<typename T> using NullPacker = Null<T>;
@@ -64,7 +64,7 @@ class KVcompare {
 		bool compare(KeyType k1, KeyType k2, comparison_types<KeyType, KeyType>) const {
 			return Compare(k1, k2);
 		}
-		template<typename T>
+/*		template<typename T>
 		bool compare(T v1, KeyType k2, comparison_types<T, KeyType>) const {
 			return Compare(Extractor(v1), k2);
 		}
@@ -76,6 +76,7 @@ class KVcompare {
 		bool compare(T1 v1, T2 v2, comparison_types<T1, T2>) const {
 			return Compare(Extractor(v1), Extractor(v2));
 		}
+*/
 };
 
 
@@ -132,44 +133,44 @@ template <typename Instance>
 class kv_set_classfuns {
 	typedef typename Instance::key_type KeyType;
 	typedef typename Instance::value_type ValueType;
-	typedef typename Instance::impl_type Obj;
+	typedef typename Instance::instance_type Obj;
 	public:
 		static void* put(kv_set* s, void* key) {
 			auto result = reinterpret_cast<kv_set_t<Obj>*>(s)->
 				type_specific_data.
 				put(
-					static_cast<ValueType>(key)
+					reinterpret_cast<ValueType>(key)
 				);
-			return static_cast<void*>(result);
+			return reinterpret_cast<void*>(result);
 		}
 		static int put_new(kv_set* s, void* key) {
 			auto result = reinterpret_cast<kv_set_t<Obj>*>(s)->
 				type_specific_data.
 				put_new(
-					static_cast<ValueType>(key)
+					reinterpret_cast<ValueType>(key)
 				);
 			return result;
 		}
 		static void* remove(kv_set* s, void* key) {
-			return static_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.remove(static_cast<KeyType>(key)));
+			return reinterpret_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.remove(reinterpret_cast<KeyType>(key)));
 		}
 		static void* lookup(kv_set* s, void* key) {
-			return static_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.lookup(static_cast<KeyType>(key)));
+			return reinterpret_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.lookup(reinterpret_cast<KeyType>(key)));
 		}
 		static int member(kv_set* s, void* key) {
-			return reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.member(static_cast<KeyType>(key));
+			return reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.member(reinterpret_cast<KeyType>(key));
 		}
 		static void* first(kv_set* s) {
-			return static_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.first());
+			return reinterpret_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.first());
 		}
 		static void* last(kv_set* s) {
-			return static_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.last());
+			return reinterpret_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.last());
 		}
 		static void* next(kv_set* s, void* key) {
-			return static_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.next(static_cast<KeyType>(key)));
+			return reinterpret_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.next(reinterpret_cast<KeyType>(key)));
 		}
 		static void* previous(kv_set* s, void* key) {
-			return static_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.previous(static_cast<KeyType>(key)));
+			return reinterpret_cast<void*>(reinterpret_cast<kv_set_t<Obj>*>(s)->type_specific_data.previous(reinterpret_cast<KeyType>(key)));
 		}
 };
 
@@ -183,26 +184,52 @@ class kv_set_classfuns {
  *
  * This wrapper simply adds a few convenience typedefs to the DataType implementation.
  */
-template <template<typename, class, typename> class DataType, typename KeyType, class StdFuns = standard_functions<KeyType>, typename ValueType = KeyType>
+template <
+	template<typename, class, typename> class DataType,
+	typename KeyType,
+	class StdFuns = standard_functions<KeyType>,
+	typename ValueType = KeyType,
+	class KPacker = NullPacker<KeyType>,
+	class VPacker = NullPacker<ValueType>,
+	class VExtractor = NullExtractor<ValueType>
+>
 class kv_set_instance {
-	typedef DataType<KeyType, StdFuns, ValueType> Impl;
+	typedef DataType<typename KPacker::key_type, StdFuns, ValueType> Impl;
 	public:
 		kv_set_instance() : inst() {}
-		ValueType put(ValueType key)   { return inst.put(key); }
-		bool put_new(ValueType key)    { return inst.put_new(key); }
-		ValueType remove(KeyType key)  { return inst.remove(key); }
-		ValueType lookup(KeyType key)  { return inst.lookup(key); }
-		bool member(KeyType key)       { return inst.member(key); }
-		ValueType first()              { return inst.first(); }
-		ValueType last()               { return inst.last(); }
-		ValueType next(KeyType key)    { return inst.next(key); } // TODO check Key/Value input parameter
-		ValueType previous(KeyType key){ return inst.previous(key); } // TODO see line above.
+		ValueType put(ValueType key) {
+			return VExtractor()(inst.put(VPacker()(key)));
+		}
+		bool put_new(ValueType key) {
+			return inst.put_new(VPacker()(key));
+		}
+		ValueType remove(KeyType key) {
+			return VExtractor()(inst.remove(KPacker()(key)));
+		}
+		ValueType lookup(KeyType key) {
+			return VExtractor()(inst.lookup(KPacker()(key)));
+		}
+		bool member(KeyType key)       { return inst.member(KPacker()(key)); }
+		ValueType first() {
+			return VExtractor()(inst.first());
+		}
+		ValueType last() {
+			return VExtractor()(inst.last());
+		}
+		ValueType next(KeyType key) {
+			// TODO check Key/Value input parameter
+			return VExtractor()(inst.next(KPacker()(key)));
+		}
+		ValueType previous(KeyType key) {
+			// TODO see line above.
+			return VExtractor()(inst.previous(KPacker()(key)));
+		}
 		
-		typedef kv_set_classfuns<kv_set_instance<DataType, KeyType, StdFuns>> classfuns;
+		typedef kv_set_classfuns<kv_set_instance<DataType, KeyType, StdFuns, ValueType, KPacker, VPacker, VExtractor>> classfuns;
 		typedef StdFuns stdfuns;
 		typedef KeyType key_type;
 		typedef ValueType value_type;
-		typedef Impl impl_type;
+		typedef kv_set_instance<DataType, KeyType, StdFuns, ValueType, KPacker, VPacker, VExtractor> instance_type;
 	private:
 		Impl inst;
 };
@@ -219,9 +246,17 @@ class kv_set_instance {
  * This cannot be a member function of the structure to be freed,
  * so it is implemented as a separate template function.
  */
-template <template<typename, class, typename> class Impl, typename K, class S, typename V = K>
+template <
+	template<typename, class, typename> class Impl,
+	typename K,
+	class S,
+	typename V = K,
+	class KPacker = NullPacker<K>,
+	class VPacker = NullPacker<V>,
+	class VExtractor = NullExtractor<V>
+>
 void delete_table(kv_set* set, void (*f)(void* context, void* element), void* context) {
-	typedef kv_set_instance<Impl, K, S, V> FS;
+	typedef kv_set_instance<Impl, K, S, V, KPacker, VPacker, VExtractor> FS;
 	//TODO delete elements in table here
 	reinterpret_cast<kv_set_t<FS>*>(set)->type_specific_data.~FS();
 	FS::stdfuns::free(set);
@@ -241,13 +276,13 @@ void delete_table(kv_set* set, void (*f)(void* context, void* element), void* co
  * Remember that you have to collect the allocated memory using
  * destroy_kv_set(kvs);
  */
-template <template<typename, class, typename> class Impl, typename K = long*, class S = standard_functions<K>, typename V = K>
+template <template<typename, class, typename> class Impl, typename K = long*, class S = standard_functions<K>, typename V = K, class KPacker = NullPacker<K>, class VPacker = NullPacker<V>, class VExtractor = NullExtractor<V>>
 kv_set* make_kv_set() {
-	typedef kv_set_instance<Impl, K, S, V> FS;
+	typedef kv_set_instance<Impl, K, S, V, KPacker, VPacker, VExtractor> FS;
 	void* memory = FS::stdfuns::alloc(sizeof(KVSet) + sizeof(FS));
 	kv_set* r = static_cast<kv_set*>(memory);
 	new (&r->type_specific_data) FS;
-	r->funs.delete_table = &delete_table<Impl, K, S, V>;
+	r->funs.delete_table = &delete_table<Impl, K, S, V, KPacker, VPacker, VExtractor>;
 	r->funs.put = &FS::classfuns::put;
 	r->funs.put_new = &FS::classfuns::put_new;
 	r->funs.remove = &FS::classfuns::remove;
@@ -265,8 +300,6 @@ kv_set* make_kv_set() {
  * @brief deallocate a kv_set constructed around a C++ datastructure
  * @param s the kv_set to destroy
  */
-void destroy_kv_set(kv_set* s) {
-	s->funs.delete_table(s, nullptr, nullptr);
-}
+void destroy_kv_set(kv_set* s);
 
 #endif

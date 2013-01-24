@@ -742,6 +742,7 @@ RUN_OBJS = \
 	$(OBJDIR)/erl_thr_queue.o	$(OBJDIR)/erl_sched_spec_pre_alloc.o \
 	$(OBJDIR)/erl_db_generic_interface.o \
 	$(OBJDIR)/erl_db_generic_interface_ds.o \
+	$(OBJDIR)/kvset.o \
 	$(OBJDIR)/skiplist.o \
 	$(OBJDIR)/testmap.o
 
