@@ -17,6 +17,16 @@
 template<typename K, typename  A>
 int default_compare(K a, K b, A) { return b - a; }
 
+template<typename T>
+class Null {
+	public:
+		T operator()(T* t) {
+			return t;
+		}
+};
+template<typename T> using NullExtractor = Null<T>;
+template<typename T> using NullPacker = Null<T>;
+
 /**
  * @internal
  * @brief type disambiguation for specialization below
@@ -36,7 +46,7 @@ class comparison_types {
 template<
 	typename KeyType,
 	bool (*Compare)(KeyType, KeyType),
-	class Extractor
+	class Extractor = NullExtractor<KeyType>
 >
 class KVcompare {
 	public:
@@ -73,23 +83,20 @@ class KVcompare {
  * @internal
  * @brief coding shorthand for compare, allocation and freeing functions
  * @param KeyType type of key for comparison
- * @param Additional type of additional parameter to comparision function
  * @param Compare comparison function
  * @param Malloc memory allocation function
  * @param Free memory freeing function
  */
 template <
 	typename KeyType,
-	typename Additional = void*,
-	int (*Compare)(KeyType, KeyType, Additional) = default_compare<KeyType, Additional>,
+	typename Comparator = KVcompare<KeyType, default_compare<KeyType, void*>>,
 	void* (*Malloc)(size_t) = std::malloc,
 	void (*Free)(void*) = std::free
 >
 struct standard_functions {
 	/** @brief comparision function wrapper */
-	static int compare(KeyType a, KeyType b, Additional add) { return Compare(a, b, add); }
 	static bool compare(KeyType a, KeyType b) {
-		return ((Compare(a, b, nullptr)) < 0);
+		return (Comparator()(a, b));
 	}
 	
 	/** @brief freeing function wrapper */
