@@ -144,6 +144,8 @@ ppc_init__(void)
      * instruction signal) in a separate process in order to be
      * completely certain that we do not mess up our own state.
      */
+/* BGQ PORT FIXME - this is removes a check for the lwsync hw instruction, for fork() reasons */
+/*
     pid = fork();
     if (pid == 0) {
 	struct sigaction act, oact;
@@ -170,6 +172,7 @@ ppc_init__(void)
 	    }
 	}
     }
+*/
     return 0;
 }
 
@@ -294,6 +297,7 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
 			  ? opts->suggested_stack_size
 			  : -1 /* Use system default */);
 
+    printf("spawning scheduler...\n");
 #ifdef ETHR_MODIFIED_DEFAULT_STACK_SIZE
     if (use_stack_size < 0)
 	use_stack_size = ETHR_MODIFIED_DEFAULT_STACK_SIZE;
