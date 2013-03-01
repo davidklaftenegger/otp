@@ -104,11 +104,6 @@
     ((ERTS_RUNQ_FLGS_GET_NOB((RQ)) & ERTS_RUNQ_FLGS_QMASK) == 0	\
      && (RQ)->misc.start == NULL)
 
-#undef RUNQ_READ_RQ
-#undef RUNQ_SET_RQ
-#define RUNQ_READ_RQ(X) ((ErtsRunQueue *) erts_smp_atomic_read_nob((X)))
-#define RUNQ_SET_RQ(X, RQ) erts_smp_atomic_set_nob((X), (erts_aint_t) (RQ))
-
 #ifdef DEBUG
 #  if defined(ARCH_64) && !HALFWORD_HEAP
 #    define ERTS_DBG_SET_INVALID_RUNQP(RQP, N) \

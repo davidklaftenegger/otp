@@ -1113,6 +1113,12 @@ extern struct erts_system_profile_flags_t erts_system_profile_flags;
 	    (p)->flags &= ~F_TIMO; \
     } while (0)
 
+
+#undef RUNQ_READ_RQ
+#undef RUNQ_SET_RQ
+#define RUNQ_READ_RQ(X) ((ErtsRunQueue *) erts_smp_atomic_read_nob((X)))
+#define RUNQ_SET_RQ(X, RQ) erts_smp_atomic_set_nob((X), (erts_aint_t) (RQ))
+
 #define ERTS_RUNQ_IX(IX)						\
   (ASSERT_EXPR(0 <= (IX) && (IX) < erts_no_run_queues),			\
    &erts_aligned_run_queues[(IX)].runq)

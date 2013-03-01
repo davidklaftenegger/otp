@@ -3935,11 +3935,11 @@ erts_ets_colliding_names(Process* p, Eterm name, Uint cnt)
 static void wait_ets_hazards_gone(Process* self, void* current) {
     int i;
     Uint total, online, active;
-    ErtsRunQueue* own = self->run_queue;
+    ErtsRunQueue* own = RUNQ_READ_RQ(&self->run_queue);
     (void) erts_schedulers_state(&total, &online, &active, 0);
     for(i=0; i<online; i++) {
 	ErtsRunQueue* q = ERTS_RUNQ_IX(i);
-	if(q == own) continue; /* TODO: maybe optimize to compare run_queue instead of hazard.ets */
+	if(q == own) continue;
 	erts_atomic_t* hazardptr = &q->hazard.ets;
 	while(current == (void*) erts_atomic_read_mb(hazardptr)); /* wait for this to change */
     }
@@ -3947,7 +3947,7 @@ static void wait_ets_hazards_gone(Process* self, void* current) {
 
 /* this sets the hazard pointer to the requested value */
 static void set_ets_hazard(Process* p, void* current) {
-    erts_atomic_t* hazardptr = &p->run_queue->hazard.ets;
+    erts_atomic_t* hazardptr = &RUNQ_READ_RQ(&p->run_queue)->hazard.ets;
     erts_atomic_set_mb(hazardptr, (erts_aint_t) current);
 }
 
