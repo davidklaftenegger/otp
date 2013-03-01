@@ -277,6 +277,7 @@ static int early_init(int *argc, char **argv);
 void
 erts_short_init(void)
 {
+    /* BGQ PORT NOTE - NOBODY IS EVER CALLING THIS */
     int ncpu = early_init(NULL, NULL);
     erl_init(ncpu,
 	     ERTS_DEFAULT_MAX_PROCESSES,

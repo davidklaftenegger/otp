@@ -471,6 +471,8 @@ create_wakeup_pipe(ErtsPollSet ps)
     int wake_fds[2];
     ps->wake_fds[0] = -1;
     ps->wake_fds[1] = -1;
+/* BGQ PORT FIXME - this is important */
+/* 
     if (pipe(wake_fds) < 0) {
 	fatal_error("%s:%d:create_wakeup_pipe(): "
 		    "Failed to create pipe: %s (%d)\n",
@@ -481,6 +483,7 @@ create_wakeup_pipe(ErtsPollSet ps)
     }
     SET_NONBLOCKING(wake_fds[0]);
     SET_NONBLOCKING(wake_fds[1]);
+*/
 
 #ifdef ERTS_POLL_DEBUG_PRINT
     erts_printf("wakeup fds = {%d, %d}\n", wake_fds[0], wake_fds[1]);

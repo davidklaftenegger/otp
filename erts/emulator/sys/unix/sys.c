@@ -28,6 +28,7 @@
 
 #include <sys/times.h>		/* ! */
 #include <time.h>
+#include <sys/time.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/uio.h>
@@ -960,16 +961,19 @@ static void unblock_signals(void)
 #ifdef HAVE_GETHRTIME
 #ifdef GETHRTIME_WITH_CLOCK_GETTIME
 
+/* BGQ PORT - time fetching needs to be done without clock_gettime */
 SysHrTime sys_gethrtime(void)
 {
-    struct timespec ts;
+    /* gettimeofday: timeval, clock_gettime: timespec */
+    struct timeval ts;
     long long result;
-    if (clock_gettime(CLOCK_MONOTONIC,&ts) != 0) {
+    /* if (clock_gettime(CLOCK_MONOTONIC,&ts) != 0) { */
+    if (gettimeofday(&ts, NULL) != 0) {
 	erl_exit(1,"Fatal, could not get clock_monotonic value!, "
 		 "errno = %d\n", errno);
     }
     result = ((long long) ts.tv_sec) * 1000000000LL + 
-	((long long) ts.tv_nsec);
+	((long long) ts.tv_usec*1000LL); /* only usec instead of nsec */
     return (SysHrTime) result;
 }
 #endif
@@ -2834,6 +2838,8 @@ smp_sig_notify(char c)
 	/* write() is async-signal safe (according to posix) */
 	res = write(sig_notify_fds[1], &c, 1);
     } while (res < 0 && errno == EINTR);
+/* BGQ PORT FIXME - this is important */
+/*
     if (res != 1) {
 	char msg[] =
 	    "smp_sig_notify(): Failed to notify signal-dispatcher thread "
@@ -2841,6 +2847,7 @@ smp_sig_notify(char c)
 	erts_silence_warn_unused_result(write(2, msg, sizeof(msg)));
 	abort();
     }
+*/
 }
 
 static void *
@@ -2861,10 +2868,13 @@ signal_dispatcher_thread_func(void *unused)
 	if (res < 0) {
 	    if (errno == EINTR)
 		continue;
-	    erl_exit(ERTS_ABORT_EXIT,
+	    /* BGQ PORT FIXME - this is important */
+	    /*
+            erl_exit(ERTS_ABORT_EXIT,
 		     "signal-dispatcher thread got unexpected error: %s (%d)\n",
 		     erl_errno_id(errno),
 		     errno);
+	    */
 	}
 	for (i = 0; i < res; i++) {
 	    /*
@@ -2934,12 +2944,15 @@ init_smp_sig_notify(void)
     erts_smp_thr_opts_t thr_opts = ERTS_SMP_THR_OPTS_DEFAULT_INITER;
     thr_opts.detached = 1;
 
+/* BGQ PORT FIXME - this is important */
+/*
     if (pipe(sig_notify_fds) < 0) {
 	erl_exit(ERTS_ABORT_EXIT,
 		 "Failed to create signal-dispatcher pipe: %s (%d)\n",
 		 erl_errno_id(errno),
 		 errno);
     }
+*/
 
     /* Start signal handler thread */
     erts_smp_thr_create(&sig_dispatcher_tid,
