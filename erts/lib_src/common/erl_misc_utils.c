@@ -848,6 +848,8 @@ read_topology(erts_cpu_info_t *cpuinfo)
 
     do {
 	int node_id = -1;
+	/* BGQ PORT FIXME */
+	int cpucnt = 0;
 
 	if (!got_nodes) {
 	    if (!realpath(ERTS_SYS_CPU_PATH, cpath))
@@ -884,6 +886,8 @@ read_topology(erts_cpu_info_t *cpuinfo)
 		break;
 	    }
 	    if (sscanf(cde->d_name, "cpu%d", &cpu_id) == 1) {
+		/* BGQ PORT FIXME */
+		cpucnt++;
 		char buf[50]; /* Much more than enough for an integer */
 		int processor_id, core_id;
 		sprintf(tpath, "%s/cpu%d/topology/physical_package_id",
@@ -915,6 +919,10 @@ read_topology(erts_cpu_info_t *cpuinfo)
 		cpuinfo->topology[ix].core	= core_id;
 		cpuinfo->topology[ix].thread	= 0; /* we'll numerate later */
 		cpuinfo->topology[ix].logical	= cpu_id;
+		/* BGQ PORT FIXME - this stops detection of more than 64 cores,
+		 * and therefore aborts this routine before it hangs on BG/Q
+		 */
+		if(cpucnt >= 64) break;
 	    }
 	}
     } while (got_nodes);
