@@ -4107,22 +4107,34 @@ int db_enqueue(Process* p, DbTable* tb, Eterm entry, int type) {
     }
 }
 
-void db_dequeue(Process* p, DbTable* tb, newlock_node* lock) {
-    int i, more;
+#define min(a,b) (((a)<(b)) ? (a) : (b))
+
+int32_t db_dequeue_from_to(queue_handle* q, DbTable* tb, DbTableMethod* meth, int32_t next, int32_t last) {
     int cret;
+    for(; next <= last; next++) {
+	void* dbterm = queue_pop(q, next);
+	cret = meth->db_put(tb, (Eterm) dbterm, DB_PUT_DELAYED);
+    }
+    return next;
+}
+
+void db_dequeue(Process* p, DbTable* tb, newlock_node* lock) {
     DbTableMethod* meth = tb->common.meth;
     
     erts_atomic_t* lockptr = &tb->common.exclusive;
     newlock_node* thelock = (newlock_node*) erts_atomic_read_nob(lockptr);
    
-    /* mark queue closed */
     queue_handle* q = &lock->queue;
-    erts_aint32_t last_element = erts_atomic32_xchg_mb(&lock->queue.head, -32000);
-    if(last_element >= MAX_QUEUE_LENGTH) last_element = MAX_QUEUE_LENGTH-1;
-    for(i = 0; i <= last_element; i++) {
-	void* dbterm = queue_pop(q, i);
-	cret = meth->db_put(tb, (Eterm) dbterm, DB_PUT_DELAYED);
-    }
+    int32_t done = 0;
+    erts_aint32_t last_element = -1;
+    do {
+	done = db_dequeue_from_to(q, tb, meth, done, last_element); /* no-op on first iteration */
+	last_element = min(erts_atomic32_read_nob(&lock->queue.head), MAX_QUEUE_LENGTH-1);
+    } while (last_element+1 != done);
+    
+    /* mark queue closed */
+    last_element = min(erts_atomic32_xchg_mb(&lock->queue.head, -32000), MAX_QUEUE_LENGTH-1);
+    done = db_dequeue_from_to(q, tb, meth, done, last_element);
     queue_reset(q);
 }
 /*
@@ -4135,6 +4147,8 @@ int db_checkqueue(Process* p, DbTable* tb, newlock_node* lock) {
     return HAS_NO_ENTRIES;
 }
 */  
+
+#undef min
 
 #endif
 
