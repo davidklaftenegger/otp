@@ -614,7 +614,7 @@ static int db_put_tree(DbTable *tbl, Eterm obj, int mode)
     TreeDbTerm *p1, *p2, *p;
 
     if(mode == DB_PUT_DELAYED) {
-	key = GETKEY(tb, ((HashDbTerm*)obj)->dbterm.tpl);
+	key = GETKEY(tb, ((TreeDbTerm*)obj)->dbterm.tpl);
     } else {
 	key = GETKEY(tb, tuple_val(obj));
     }
