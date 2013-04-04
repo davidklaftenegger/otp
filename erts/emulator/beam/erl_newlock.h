@@ -49,15 +49,26 @@ void queue_reset(queue_handle* q);
 int queue_push(queue_handle* q, void* entry);
 void* queue_pop(queue_handle* q, unsigned int idx);
 
+enum lock_unlocking {
+    NO_NEED_TO_UNLOCK,
+    NEED_TO_UNLOCK
+};
+#define EXCLUSIVE_LOCK 0x80000000
+#define READ_LOCK 0x40000000
+#define LOCK_MASK (~(EXCLUSIVE_LOCK | READ_LOCK))
 typedef struct newlock_locknode {
     erts_atomic32_t locked;
+    erts_atomic32_t readers;
     erts_atomic_t next;
     queue_handle queue;
 } newlock_node;
 
 void acquire_newlock(erts_atomic_t* L, newlock_node* I);
+enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I);
 int try_newlock(erts_atomic_t* L, newlock_node* I);
 int is_free_newlock(erts_atomic_t* L);
+void read_read_newlock(newlock_node* I);
+void release_read_newlock(erts_atomic_t* L, newlock_node* I);
 void release_newlock(erts_atomic_t* L, newlock_node* I);
 
 #endif // ERL_NEWLOCK_H

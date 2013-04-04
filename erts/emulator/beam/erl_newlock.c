@@ -25,7 +25,7 @@ void queue_init(queue_handle* q) {
 }
 
 void queue_reset(queue_handle* q) {
-    int i;
+    /* int i; */
     erts_atomic32_set_nob(&q->head, -1);
     /* re-initialization is necessary, either here or in queue_pop */
     /*
@@ -66,6 +66,7 @@ void* queue_pop(queue_handle* q, unsigned int idx) {
 void acquire_newlock(erts_atomic_t* L, newlock_node* I) {
     newlock_node* pred;
     erts_atomic_set_nob(&I->next, (erts_aint_t) NULL);
+    erts_atomic32_set_nob(&I->readers, EXCLUSIVE_LOCK);
     pred = (newlock_node*)erts_atomic_xchg_mb(L, (erts_aint_t) I);
     if(pred != NULL) {
 	erts_atomic32_set_mb(&I->locked, 1);
@@ -74,9 +75,45 @@ void acquire_newlock(erts_atomic_t* L, newlock_node* I) {
     }
 }
 
+enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I) {
+    newlock_node* pred;
+    while(1) {
+	erts_aint32_t readers;
+	pred = (newlock_node*)erts_atomic_read_nob(L);
+	if(pred)
+	    readers = erts_atomic32_read_nob(&pred->readers);
+	if((!pred) || readers & EXCLUSIVE_LOCK) {
+	    /* do normal exclusive lock, but check for races */
+	    erts_atomic_set_nob(&I->next, (erts_aint_t) NULL);
+	    erts_atomic32_set_nob(&I->readers, READ_LOCK+1); //TODO
+	    if(pred == (newlock_node*)erts_atomic_cmpxchg_mb(L, (erts_aint_t) I, (erts_aint_t) pred)) {
+		if(pred != NULL) {
+		    erts_atomic32_set_mb(&I->locked, 1);
+		    erts_atomic_set_mb(&pred->next, (erts_aint_t) I);
+		    while(erts_atomic32_read_mb(&I->locked)); /* spin */
+		}
+		return NEED_TO_UNLOCK;
+	    }
+	} else if(readers & READ_LOCK) {
+	    /* already a promoted read-lock: piggyback */
+	    int num = erts_atomic32_inc_read_mb(&pred->readers);
+	    if(!(num & EXCLUSIVE_LOCK)) {
+		/* successfully piggy-backed */
+		while(erts_atomic32_read_nob(&pred->readers) & READ_LOCK); /* spin on first reader's permission */
+		return NO_NEED_TO_UNLOCK;
+	    } else {
+		erts_atomic32_dec_nob(&pred->readers);
+	    }
+	}
+	/* this was too late, lock is already changing */
+	while(pred == (newlock_node*) erts_atomic_read_nob(L)); /* spin until lockholder changed */
+    }
+}
+
 int try_newlock(erts_atomic_t* L, newlock_node* I) {
     newlock_node* pred;
     erts_atomic_set_nob(&I->next, (erts_aint_t) NULL);
+    erts_atomic32_set_nob(&I->readers, EXCLUSIVE_LOCK);
     pred = (newlock_node*)erts_atomic_cmpxchg_mb(L, (erts_aint_t) I, (erts_aint_t) NULL);
     return pred == NULL;
 }
@@ -97,3 +134,15 @@ void release_newlock(erts_atomic_t* L, newlock_node* I) {
     }
     erts_atomic32_set_mb(&next->locked, 0);
 }
+
+void read_read_newlock(newlock_node* I) {
+    erts_atomic32_dec_nob(&I->readers);
+}
+void release_read_newlock(erts_atomic_t* L, newlock_node* I) {
+    erts_atomic32_read_band_nob(&I->readers, ~READ_LOCK); /* unlock all readers */
+//TODO    while (erts_atomic32_read_nob(&I->readers)); /* spin on readers setting pointers */
+    if(erts_atomic32_read_bor_nob(&I->readers, EXCLUSIVE_LOCK)) /* from now on treat as normal lock, no piggy-backing anymore */
+	while (erts_atomic32_read_nob(&I->readers) & ~EXCLUSIVE_LOCK); /* spin on readers setting reader pointers */
+    release_newlock(L, I); /* unlock next operation (likely has to wait for reader pointers to be changed) */
+}
+

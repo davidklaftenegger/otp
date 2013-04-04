@@ -327,12 +327,18 @@ static ERTS_INLINE void db_shared_lock(Process* self, DbTable* tb) {
      */
     if(!is_free_newlock(&tb->common.exclusive))  {
 	newlock_node* mynode;
+	enum lock_unlocking unlock;
 	set_ets_reader(self, NULL);
 	mynode = get_locknode(self);
-	acquire_newlock(&tb->common.exclusive, mynode);
-	set_ets_reader(self, tb);
-
-	release_newlock(&tb->common.exclusive, mynode);
+	unlock = acquire_read_newlock(&tb->common.exclusive, mynode);
+	if(unlock == NEED_TO_UNLOCK) {
+	    db_dequeue(self, tb, mynode); /* this will disable further enqueues on the same lock node */
+	    set_ets_reader(self, tb);
+	    release_read_newlock(&tb->common.exclusive, mynode);
+	} else {
+	    set_ets_reader(self, tb);
+	    read_read_newlock(mynode);
+	}
     }
 }
 
