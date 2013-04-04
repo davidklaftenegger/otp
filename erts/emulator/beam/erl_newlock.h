@@ -64,10 +64,10 @@ typedef struct newlock_locknode {
 } newlock_node;
 
 void acquire_newlock(erts_atomic_t* L, newlock_node* I);
-enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I);
+enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I, newlock_node** T);
 int try_newlock(erts_atomic_t* L, newlock_node* I);
 int is_free_newlock(erts_atomic_t* L);
-void read_read_newlock(newlock_node* I);
+void read_read_newlock(newlock_node* L);
 void release_read_newlock(erts_atomic_t* L, newlock_node* I);
 void release_newlock(erts_atomic_t* L, newlock_node* I);
 

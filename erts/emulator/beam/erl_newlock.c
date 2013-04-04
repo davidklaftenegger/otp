@@ -75,7 +75,7 @@ void acquire_newlock(erts_atomic_t* L, newlock_node* I) {
     }
 }
 
-enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I) {
+enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I, newlock_node** T) {
     newlock_node* pred;
     while(1) {
 	erts_aint32_t readers;
@@ -85,7 +85,7 @@ enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I) {
 	if((!pred) || readers & EXCLUSIVE_LOCK) {
 	    /* do normal exclusive lock, but check for races */
 	    erts_atomic_set_nob(&I->next, (erts_aint_t) NULL);
-	    erts_atomic32_set_nob(&I->readers, READ_LOCK+1); //TODO
+	    erts_atomic32_set_nob(&I->readers, READ_LOCK);
 	    if(pred == (newlock_node*)erts_atomic_cmpxchg_mb(L, (erts_aint_t) I, (erts_aint_t) pred)) {
 		if(pred != NULL) {
 		    erts_atomic32_set_mb(&I->locked, 1);
@@ -100,6 +100,7 @@ enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I) {
 	    if(!(num & EXCLUSIVE_LOCK)) {
 		/* successfully piggy-backed */
 		while(erts_atomic32_read_nob(&pred->readers) & READ_LOCK); /* spin on first reader's permission */
+		*T = pred;
 		return NO_NEED_TO_UNLOCK;
 	    } else {
 		erts_atomic32_dec_nob(&pred->readers);
@@ -135,8 +136,8 @@ void release_newlock(erts_atomic_t* L, newlock_node* I) {
     erts_atomic32_set_mb(&next->locked, 0);
 }
 
-void read_read_newlock(newlock_node* I) {
-    erts_atomic32_dec_nob(&I->readers);
+void read_read_newlock(newlock_node* L) {
+    erts_atomic32_dec_nob(&L->readers);
 }
 void release_read_newlock(erts_atomic_t* L, newlock_node* I) {
     erts_atomic32_read_band_nob(&I->readers, ~READ_LOCK); /* unlock all readers */
