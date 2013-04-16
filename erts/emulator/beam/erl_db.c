@@ -308,7 +308,12 @@ static ERTS_INLINE void db_init_lock(DbTable* tb, int use_frequent_read_lock,
 #endif
 }
 
+#define ACTION_MASK 0x03ul
+#define ACTION_PUT 0x02ul
+#define ACTION_DELETE 0x00ul
 
+#define ENQUEUE_SUCCESS 4
+#define ENQUEUE_FAIL 3
 #define LOCK_IRRELEVANT 2
 #define LOCK_SUCCESS 1
 #define LOCK_FAIL 0
@@ -317,6 +322,7 @@ static ERTS_INLINE void db_init_lock(DbTable* tb, int use_frequent_read_lock,
 static ERTS_INLINE void db_exclusive_lock(Process* self, DbTable* tb) {
     newlock_node* mynode = get_locknode(self);
     acquire_newlock(&tb->common.exclusive, mynode);
+    queue_open(&mynode->queue);
     wait_ets_readers_gone(self, tb);
 }
 
@@ -333,6 +339,8 @@ static ERTS_INLINE void db_shared_lock(Process* self, DbTable* tb) {
 	mynode = get_locknode(self);
 	unlock = acquire_read_newlock(&tb->common.exclusive, mynode, &sharenode);
 	if(unlock == NEED_TO_UNLOCK) {
+	    queue_open(&mynode->queue);
+	    wait_ets_readers_gone(self, tb);
 	    db_dequeue(self, tb, mynode); /* this will disable further enqueues on the same lock node */
 	    set_ets_reader(self, tb);
 	    release_read_newlock(&tb->common.exclusive, mynode);
@@ -347,6 +355,7 @@ static ERTS_INLINE void db_shared_lock(Process* self, DbTable* tb) {
 static ERTS_INLINE int db_try_exclusive_lock(Process* self, DbTable* tb) {
     newlock_node* mynode = get_locknode(self);
     if(try_newlock(&tb->common.exclusive, mynode)) {
+	queue_open(&mynode->queue);
 	wait_ets_readers_gone(self, tb);
 	return LOCK_SUCCESS;
     } else {
@@ -385,7 +394,7 @@ static ERTS_INLINE void db_lock(Process* self, DbTable* tb, db_lock_kind_t kind)
 		break;
 	    case LCK_READ:
 		db_shared_lock(self, tb);
-	        break;
+		break;
 	    default: /* LCK_WILLTRY: no locking */
 		break;
 	}
@@ -494,7 +503,8 @@ DbTable* db_get_table_aux(Process *p,
 	    db_lock(p, tb, kind);
 #ifdef ERTS_SMP
 	    if(IS_SLOT_DEAD(slot)){
-		set_ets_reader(p, NULL);
+		// TODO ask Kjell that this is correct and not unset ets ptr here.
+		db_unlock(p, tb, kind);
 		tb = NULL;
 	    }
 #endif
@@ -1161,26 +1171,28 @@ BIF_RETTYPE ets_insert_2(BIF_ALIST_2)
 	db_unlock(BIF_P, tb, kind);
 	BIF_RET(am_true);
     }
-
+#ifdef ERTS_SMP
     if(kind == LCK_WILLTRY) {
 	int test;
-	if(db_trylock(BIF_P, tb) != LOCK_FAIL) goto normal_path;
+	if(db_trylock(BIF_P, tb) != LOCK_FAIL) {
+	    goto normal_path;
+	}
 	/* lock already taken -> enqueue instead of real insert */
-	    if (is_not_tuple(BIF_ARG_2) || 
-		(arityval(*tuple_val(BIF_ARG_2)) < tb->common.keypos)) {
-		goto badarg;
-	    }
-	    test = db_enqueue(BIF_P, tb, BIF_ARG_2, DB_PUT_DELAYED);
-	    if (test == LOCK_FAIL) {
-		db_lock(BIF_P, tb, LCK_WRITE_REC);
-		goto normal_path;
-	    }
-	    /* check lock is still in use, otherwise trigger dequeuing */
-	    if(db_trylock(BIF_P, tb) == LOCK_SUCCESS) {
-		db_unlock(BIF_P, tb, LCK_WRITE_REC);
-	    }
+	if (is_not_tuple(BIF_ARG_2) || 
+	    (arityval(*tuple_val(BIF_ARG_2)) < tb->common.keypos)) { /* TODO potential segfault here: tb-> is unprotected? */
+	    goto badarg;
+	}
+	test = db_enqueue(BIF_P, tb, BIF_ARG_2, ACTION_PUT);
+	if (test == ENQUEUE_FAIL) {
+	    db_lock(BIF_P, tb, LCK_WRITE_REC);
+	    goto normal_path;
+	}
     } else {
 normal_path:
+#else
+    /* TODO for consistency, there should be a db_lock call here? */
+    {
+#endif
 	if(kind == LCK_WILLTRY) kind = LCK_WRITE_REC;
 	meth = tb->common.meth;
 	if (is_list(BIF_ARG_2)) {
@@ -1848,6 +1860,10 @@ BIF_RETTYPE ets_delete_1(BIF_ALIST_1)
     tb->common.status &= ~(DB_PROTECTED|DB_PUBLIC|DB_PRIVATE);
     tb->common.status |= DB_DELETE;
 
+    /* barrier for concurrent operations while holding the write lock */
+    db_unlock(BIF_P, tb, LCK_WRITE);
+    db_lock(BIF_P, tb, LCK_WRITE);
+
     if (tb->common.owner != BIF_P->common.id) {
 	DeclareTmpHeap(meta_tuple,3,BIF_P);
 
@@ -2094,14 +2110,29 @@ BIF_RETTYPE ets_delete_2(BIF_ALIST_2)
     Eterm ret;
 
     CHECK_TABLES();
-
-    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE, LCK_WRITE_REC)) == NULL) {
+    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE, LCK_WILLTRY)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
 
-    cret = tb->common.meth->db_erase(tb,BIF_ARG_2,&ret);
+#ifdef ERTS_SMP
+    if(db_trylock(BIF_P, tb) == LOCK_FAIL) {
+	int test = db_enqueue(BIF_P, tb, BIF_ARG_2, ACTION_DELETE);
+	cret = DB_ERROR_NONE;
+	ret = am_true;
+	if (test == ENQUEUE_FAIL) {
+	    db_lock(BIF_P, tb, LCK_WRITE_REC);
+	    goto normal_path;
+	}
+    } else {
+normal_path:
+#else
+    /* TODO for consistency, there should be a db_lock call here? */
+    {
+#endif
+	cret = tb->common.meth->db_erase(tb,BIF_ARG_2,&ret);
 
-    db_unlock(BIF_P, tb, LCK_WRITE_REC);
+	db_unlock(BIF_P, tb, LCK_WRITE_REC);
+    }
 
     switch (cret) {
     case DB_ERROR_NONE:
@@ -3414,6 +3445,10 @@ erts_db_process_exiting(Process *c_p, ErtsProcLocks c_p_locks)
 			    if (is_atom(tb->common.id))
 				remove_named_tab(c_p, tb, 0);
 
+			    /* barrier for concurrent operations while holding the write lock */
+			    db_unlock(c_p, tb, LCK_WRITE);
+			    db_lock(c_p, tb, LCK_WRITE);
+
 			    free_heir_data(tb);
 			    free_fixations_locked(tb);
 			}
@@ -4082,9 +4117,9 @@ static newlock_node* get_locknode(Process* p) {
     erts_atomic_t* lockptr = &RUNQ_READ_RQ(&p->run_queue)->locking.ets_locknode;
     newlock_node* n = (newlock_node*) erts_atomic_read_nob(lockptr);
     if( n == NULL) { /* TODO UGLY AS HELL CODE MOVE TO PROCESS INIT */
-	int i;
 	n = malloc(sizeof(newlock_node));
 	erts_atomic32_init_nob(&n->locked, 0);
+	erts_atomic32_init_nob(&n->readers, 0);
 	erts_atomic_init_nob(&n->next, 0);
 	queue_init(&n->queue);
 	erts_atomic_set_mb(lockptr, (erts_aint_t)n);
@@ -4098,29 +4133,68 @@ int db_enqueue(Process* p, DbTable* tb, Eterm entry, int type) {
     erts_atomic_t* lockptr = &tb->common.exclusive;
     newlock_node* thelock = (newlock_node*) erts_atomic_read_nob(lockptr);
     queue_handle* q;
-    if(thelock == NULL) return LOCK_FAIL; /* safety check: abort enqueuing if lock disappeared, TODO this might cause superfluous queue-lock-entries */
+    if(thelock == NULL) return ENQUEUE_FAIL; /* safety check: abort enqueuing if lock disappeared, TODO this might cause superfluous queue-lock-entries */
 
     q = &thelock->queue; //s[index];
     /* TODO implementation choice: enqueue if full queue, or spin for space in queue */
-    if(queue_is_full(q)) return LOCK_FAIL; /* enqueue */
+    if(queue_is_full(q)) return ENQUEUE_FAIL; /* enqueue */
     /* while(queue_is_full(q)); */ /* spin */
-    dbt = meth->db_new_dbterm(tb, entry);
+
+    /* type is either ACTION_PUT (0x0) or ACTION_DELETE (0x1).
+     * This information is encoded in the "free" bits at the end of the DbTerm pointer
+     */
+    switch(type) {
+	case ACTION_PUT:
+	    dbt = meth->db_new_dbterm(tb, entry);
+	    dbt = (void*)((erts_aint_t)dbt | ACTION_PUT);
+	    break;
+	case ACTION_DELETE:
+	    /* TODO erts_aint_t is always wordsize, but used as a normal integral type here */
+	    /* TODO the call to db_store_term requires a patched version of that function */
+	    dbt = db_store_term(&tb->common, NULL, 0, entry); /* use DbTerm, but without additional memory */
+	    dbt = (void*)((erts_aint_t)dbt | ACTION_DELETE);
+	    break;
+    }
     if( queue_push(q, (void*) dbt) ) {
 	/* this case is an expensive failure */
-	meth->db_free_dbterm(tb, dbt);
-	return LOCK_FAIL;
+	/* TODO refetch q to try on current end of mcs queue instead of the one before memory allocation for dbterm? */
+	dbt = (void*)(((erts_aint_t)dbt) & ~ACTION_MASK);
+	switch(type) {
+	    case ACTION_PUT:
+		meth->db_free_dbterm(tb, dbt);
+		break;
+	    case ACTION_DELETE:
+		db_free_term(tb, dbt, 0);
+		break;
+	}
+	return ENQUEUE_FAIL;
     } else {
-	return LOCK_SUCCESS;
+	return ENQUEUE_SUCCESS;
     }
 }
 
 #define min(a,b) (((a)<(b)) ? (a) : (b))
-
+int32_t db_dequeue_from_to(queue_handle* q, DbTable* tb, DbTableMethod* meth, int32_t next, int32_t last); //TODO move this
 int32_t db_dequeue_from_to(queue_handle* q, DbTable* tb, DbTableMethod* meth, int32_t next, int32_t last) {
     int cret;
+    Eterm ret;
     for(; next <= last; next++) {
-	void* dbterm = queue_pop(q, next);
-	cret = meth->db_put(tb, (Eterm) dbterm, DB_PUT_DELAYED);
+	void* term = queue_pop(q, next);
+	/* TODO erts_aint_t is always wordsize, but used as a normal integral type here */
+	erts_aint_t action = ((erts_aint_t)term) & ACTION_MASK;
+	
+	/* TODO erts_aint_t is always wordsize, but used as a normal integral type here */
+	term = (void*)(((erts_aint_t)term) & ~ACTION_MASK);
+	switch(action) {
+	    case ACTION_PUT:
+		cret = meth->db_put(tb, (Eterm) term, DB_PUT_DELAYED); /* term is a DbTerm here, the cast is to Eterm because of the interface */
+		break;
+	    case ACTION_DELETE:
+		cret = meth->db_erase(tb, ((DbTerm*)term)->tpl[0], &ret); /* term is DbTerm of a key here */
+		/* free DbTerm */
+		db_free_term(tb, term, 0);
+		break;
+	}
     }
     return next;
 }
@@ -4128,12 +4202,14 @@ int32_t db_dequeue_from_to(queue_handle* q, DbTable* tb, DbTableMethod* meth, in
 void db_dequeue(Process* p, DbTable* tb, newlock_node* lock) {
     DbTableMethod* meth = tb->common.meth;
     
-    erts_atomic_t* lockptr = &tb->common.exclusive;
-    newlock_node* thelock = (newlock_node*) erts_atomic_read_nob(lockptr);
+    //TODO neccessary?
+    //erts_atomic_t* lockptr = &tb->common.exclusive;
+    //newlock_node* thelock = (newlock_node*) erts_atomic_read_nob(lockptr);
    
     queue_handle* q = &lock->queue;
     int32_t done = 0;
     erts_aint32_t last_element = -1;
+    //if(tb->common.status & DB_DELETE) return; /* TODO: this does not ensure FIFO is in clean state */
     do {
 	done = db_dequeue_from_to(q, tb, meth, done, last_element); /* no-op on first iteration */
 	last_element = min(erts_atomic32_read_nob(&lock->queue.head), MAX_QUEUE_LENGTH-1);
@@ -4142,7 +4218,6 @@ void db_dequeue(Process* p, DbTable* tb, newlock_node* lock) {
     /* mark queue closed */
     last_element = min(erts_atomic32_xchg_mb(&lock->queue.head, -32000), MAX_QUEUE_LENGTH-1);
     done = db_dequeue_from_to(q, tb, meth, done, last_element);
-    queue_reset(q);
 }
 /*
 int db_checkqueue(Process* p, DbTable* tb, newlock_node* lock) {

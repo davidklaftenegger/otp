@@ -44,8 +44,13 @@ static ERTS_INLINE uint32_t queue_size(queue_handle* q) {
     return erts_atomic32_read_mb(&q->head) + 1;
 }
 
+static ERTS_INLINE void queue_open(queue_handle* q) {
+	erts_atomic32_set_nob(&q->head, -1);
+}
+
+
+
 void queue_init(queue_handle* q);
-void queue_reset(queue_handle* q);
 int queue_push(queue_handle* q, void* entry);
 void* queue_pop(queue_handle* q, unsigned int idx);
 
@@ -53,7 +58,7 @@ enum lock_unlocking {
     NO_NEED_TO_UNLOCK,
     NEED_TO_UNLOCK
 };
-#define EXCLUSIVE_LOCK 0x80000000
+#define EXCLUSIVE_LOCK 0x00000000
 #define READ_LOCK 0x40000000
 #define LOCK_MASK (~(EXCLUSIVE_LOCK | READ_LOCK))
 typedef struct newlock_locknode {

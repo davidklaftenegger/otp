@@ -2857,13 +2857,25 @@ void* db_store_term(DbTableCommon *tb, DbTerm* old, Uint offset, Eterm obj)
     }
     else {
 	basep = erts_db_alloc(ERTS_ALC_T_DB_TERM, (DbTable *)tb,
+/* original line:
 			      (offset + sizeof(DbTerm) + sizeof(Eterm)*(size-1)));
+*/
+			      (offset + sizeof(DbTerm) + sizeof(Eterm)*(size==0?1:size-1)));
+/* END TODO changes */
 	newp = (DbTerm*) (basep + offset);
     }
     newp->size = size;
     top = newp->tpl;
     tmp_offheap.first  = NULL;
+/* TODO original line:
     copy_struct_rel(obj, size, &top, &tmp_offheap, NULL, top);
+*/
+    if(size == 0) {
+	*top = obj;
+    } else {
+	copy_struct_rel(obj, size, &top, &tmp_offheap, NULL, top);
+    }
+/* END TODO changes */
     newp->first_oh = tmp_offheap.first;
 #ifdef DEBUG_CLONE
     newp->debug_clone = NULL;
