@@ -67,22 +67,33 @@ enum locknode_type {
     R_HANDOFF
 };
 
+union readerflag {
+    erts_atomic32_t atomic;
+    byte _cache_line_padding[64];
+};
+
 #define EXCLUSIVE_LOCK 0x00000000
 #define READ_LOCK 0x40000000
 #define LOCK_MASK (~(EXCLUSIVE_LOCK | READ_LOCK))
 typedef struct newlock_locknode {
-    erts_atomic32_t locked;
-    erts_atomic32_t readers;
-    erts_atomic32_t type;
+    union {
+	erts_atomic32_t atomic;
+	byte _cache_line_padding[64];
+    } locked;
+    union readerflag* readers;
+    union {
+	erts_atomic32_t atomic;
+	byte _cache_line_padding[64];
+    } type;
     erts_atomic_t next;
     queue_handle queue;
 } newlock_node;
 
 void acquire_newlock(erts_atomic_t* L, newlock_node* I);
-enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I, newlock_node** T);
+enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I, newlock_node** T, int idx);
 int try_newlock(erts_atomic_t* L, newlock_node* I);
 int is_free_newlock(erts_atomic_t* L);
-void read_read_newlock(newlock_node* L);
+void read_read_newlock(newlock_node* L, int idx);
 void release_read_newlock(erts_atomic_t* L, newlock_node* I);
 void release_newlock(erts_atomic_t* L, newlock_node* I);
 

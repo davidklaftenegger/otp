@@ -72,60 +72,60 @@ void acquire_newlock(erts_atomic_t* L, newlock_node* I) {
     erts_atomic_set_nob(&I->next, (erts_aint_t) NULL);
     pred = (newlock_node*)erts_atomic_xchg_mb(L, (erts_aint_t) I);
     if(pred != NULL) {
-	erts_atomic32_set_mb(&I->locked, 1);
-	erts_atomic_set_mb(&pred->next, (erts_aint_t) I);
-	while(erts_atomic32_read_mb(&I->locked)); /* spin */
+	erts_atomic32_set_nob(&I->locked.atomic, 1);
+	erts_atomic_set_nob(&pred->next, (erts_aint_t) I);
+	while(erts_atomic32_read_mb(&I->locked.atomic)); /* spin */
     }
 }
 
-enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I, newlock_node** T) {
+enum lock_unlocking acquire_read_newlock(erts_atomic_t* L, newlock_node* I, newlock_node** T, int idx) {
     newlock_node* pred;
     while(1) {
-	erts_aint32_t readers;
+//	erts_aint32_t readers;
 	enum locknode_type type;
-	pred = (newlock_node*)erts_atomic_read_mb(L);
+	pred = (newlock_node*)erts_atomic_read_nob(L);
 	if(pred) {
-	    type = erts_atomic32_read_mb(&pred->type);
+	    type = erts_atomic32_read_nob(&pred->type.atomic);
 	}
 	if((!pred) || (type == DX)) {
 	    /* do normal exclusive lock, but check for races */
 	    erts_atomic_set_nob(&I->next, (erts_aint_t) NULL);
-	    erts_atomic32_set_nob(&I->type, R_INIT);
+	    erts_atomic32_set_nob(&I->type.atomic, R_INIT);
 	    if(pred == (newlock_node*)erts_atomic_cmpxchg_mb(L, (erts_aint_t) I, (erts_aint_t) pred)) { /* TODO: just always take? */
 		if(pred != NULL) {
-		    erts_atomic32_set_nob(&I->locked, 1);
-		    erts_atomic_set_mb(&pred->next, (erts_aint_t) I);
+		    erts_atomic32_set_nob(&I->locked.atomic, 1);
+		    erts_atomic_set_nob(&pred->next, (erts_aint_t) I);
 		    /* check that no handover is useful here TODO */
-		    erts_atomic32_set_mb(&I->type, R_WAIT);
-		    while(erts_atomic32_read_mb(&I->locked)); /* spin */
+		    erts_atomic32_set_nob(&I->type.atomic, R_WAIT);
+		    while(erts_atomic32_read_mb(&I->locked.atomic)); /* spin */
 		} else {
-		    erts_atomic32_set_mb(&I->type, R_WAIT);
+		    erts_atomic32_set_mb(&I->type.atomic, R_WAIT);
 		}
 
 		return NEED_TO_UNLOCK;
 	    } else {
-		erts_atomic32_set_mb(&I->type, DX);
+		erts_atomic32_set_mb(&I->type.atomic, DX);
 	    }
 	    /* this was too late, lock is already changing */
 	    //while(pred == (newlock_node*) erts_atomic_read_nob(L)); /* spin until lockholder changed, TODO: measure effect*/
 	} else {
 	    /* already a promoted read-lock: piggyback */
-	    if(type == R_INIT) while(type = erts_atomic_read_mb(&pred->type) == R_INIT); /* wait for locknode to be ready */
+	    if(type == R_INIT) while((type = erts_atomic_read_nob(&pred->type.atomic)) == R_INIT); /* wait for locknode to be ready */
 	    if(type == DX) continue;
 	    if(type == R_HANDOFF) {
 		/* TODO */
 	    } else {
 		/* either in R_WAIT or already in R_PROCEED */
 		/* speculatively increase number of readers */
-		erts_atomic32_inc_mb(&pred->readers);
+		erts_atomic32_inc_nob(&pred->readers[idx].atomic);
 		/* now need to check it is still okay to use: still proceeding? */
 		*T = pred;
 		if(type == R_WAIT)
-		    while(type = erts_atomic32_read_mb(&pred->type) == R_WAIT); /* spin on first reader's permission */
+		    while((type = erts_atomic32_read_mb(&pred->type.atomic)) == R_WAIT); /* spin on first reader's permission */
 		if(type == R_PROCEED) {
 		    return NO_NEED_TO_UNLOCK;
 		} else {
-		    erts_atomic32_dec_mb(&pred->readers);
+		    erts_atomic32_dec_mb(&pred->readers[idx].atomic);
 		}
 	    }
 	}
@@ -147,7 +147,7 @@ int is_free_newlock(erts_atomic_t* L) {
 }
 
 void release_newlock(erts_atomic_t* L, newlock_node* I) {
-    newlock_node* next = (newlock_node*)erts_atomic_read_mb(&I->next);
+    newlock_node* next = (newlock_node*)erts_atomic_read_nob(&I->next);
     if(next == NULL) {
 	if(erts_atomic_cmpxchg_mb(L, (erts_aint_t) NULL, (erts_aint_t) I) == (erts_aint_t) I) {
 	    return;
@@ -156,17 +156,20 @@ void release_newlock(erts_atomic_t* L, newlock_node* I) {
 	    next = (newlock_node*) erts_atomic_read_mb(&I->next);
 	} while(next == NULL); /* spin */
     }
-    erts_atomic32_set_mb(&next->locked, 0);
+    erts_atomic32_set_mb(&next->locked.atomic, 0);
 }
 
-void read_read_newlock(newlock_node* L) {
-    erts_atomic32_dec_nob(&L->readers);
+void read_read_newlock(newlock_node* L, int idx) {
+    erts_atomic32_dec_mb(&L->readers[idx].atomic);
 }
 
 void release_read_newlock(erts_atomic_t* L, newlock_node* I) {
-    erts_atomic32_set_mb(&I->type, R_PROCEED); /* unlock all readers */
-    while(erts_atomic32_read_mb(&I->readers)); /* spin on readers setting pointers */
-    erts_atomic32_set_mb(&I->type, DX);
+    int idx;
+    erts_atomic32_set_mb(&I->type.atomic, R_PROCEED); /* unlock all readers */
+    for(idx=0; idx < erts_no_schedulers; idx++) {
+	while(erts_atomic32_read_mb(&I->readers[idx].atomic)); /* spin on readers setting pointers */
+    }
+    erts_atomic32_set_mb(&I->type.atomic, DX);
     release_newlock(L, I); /* unlock next operation (likely has to wait for reader pointers to be changed) */
 }
 

@@ -335,9 +335,10 @@ static ERTS_INLINE void db_shared_lock(Process* self, DbTable* tb) {
 	newlock_node* mynode;
 	newlock_node* sharenode;
 	enum lock_unlocking unlock;
+	int index = RUNQ_READ_RQ(&self->run_queue)->ix;
 	set_ets_reader(self, NULL);
 	mynode = get_locknode(self);
-	unlock = acquire_read_newlock(&tb->common.exclusive, mynode, &sharenode);
+	unlock = acquire_read_newlock(&tb->common.exclusive, mynode, &sharenode, index);
 	if(unlock == NEED_TO_UNLOCK) {
 	    queue_open(&mynode->queue);
 	    wait_ets_readers_gone(self, tb);
@@ -346,7 +347,7 @@ static ERTS_INLINE void db_shared_lock(Process* self, DbTable* tb) {
 	    release_read_newlock(&tb->common.exclusive, mynode);
 	} else {
 	    set_ets_reader(self, tb);
-	    read_read_newlock(sharenode);
+	    read_read_newlock(sharenode, index);
 	}
     }
 }
@@ -4117,10 +4118,14 @@ static newlock_node* get_locknode(Process* p) {
     erts_atomic_t* lockptr = &RUNQ_READ_RQ(&p->run_queue)->locking.ets_locknode;
     newlock_node* n = (newlock_node*) erts_atomic_read_nob(lockptr);
     if( n == NULL) { /* TODO UGLY AS HELL CODE MOVE TO PROCESS INIT */
+	int idx;
 	n = malloc(sizeof(newlock_node));
-	erts_atomic32_init_nob(&n->locked, 0);
-	erts_atomic32_init_nob(&n->type, DX);
-	erts_atomic32_init_nob(&n->readers, 0);
+	erts_atomic32_init_nob(&n->locked.atomic, 0);
+	erts_atomic32_init_nob(&n->type.atomic, DX);
+	n->readers = malloc(sizeof(union readerflag) * erts_no_schedulers);
+	for(idx=0; idx < erts_no_schedulers; idx++) {
+	    erts_atomic32_init_nob(&n->readers[idx].atomic, 0);
+	}
 	erts_atomic_init_nob(&n->next, 0);
 	queue_init(&n->queue);
 	erts_atomic_set_mb(lockptr, (erts_aint_t)n);
