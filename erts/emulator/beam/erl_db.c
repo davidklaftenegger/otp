@@ -4119,6 +4119,7 @@ static newlock_node* get_locknode(Process* p) {
     if( n == NULL) { /* TODO UGLY AS HELL CODE MOVE TO PROCESS INIT */
 	n = malloc(sizeof(newlock_node));
 	erts_atomic32_init_nob(&n->locked, 0);
+	erts_atomic32_init_nob(&n->type, DX);
 	erts_atomic32_init_nob(&n->readers, 0);
 	erts_atomic_init_nob(&n->next, 0);
 	queue_init(&n->queue);
