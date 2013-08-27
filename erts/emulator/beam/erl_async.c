@@ -227,12 +227,14 @@ erts_init_async(void)
 	    = erts_async_thread_suggested_stack_size;
 
 	for (i = 0; i < erts_async_max_threads; i++) {
+	    printf("for-loop i=%d of %d\n", i, erts_async_max_threads);
 	    ErtsAsyncQ *aq = async_q(i);
 	    erts_thr_create(&aq->thr_id, async_main, (void*) aq, &thr_opts);
+	    printf("for-loop-end i=%d\n", i);
 	}
 
 	/* Wait for async threads to initialize... */
-
+	printf("something\n");
 	erts_mtx_lock(&async->init.data.mtx);
 	while (async->init.data.no_initialized != erts_async_max_threads)
 	    erts_cnd_wait(&async->init.data.cnd, &async->init.data.mtx);
@@ -240,6 +242,7 @@ erts_init_async(void)
 
 	erts_mtx_destroy(&async->init.data.mtx);
 	erts_cnd_destroy(&async->init.data.cnd);
+	printf("something else\n");
 
     }
 }

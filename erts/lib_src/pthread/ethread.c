@@ -296,8 +296,7 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
     int use_stack_size = (opts && opts->suggested_stack_size >= 0
 			  ? opts->suggested_stack_size
 			  : -1 /* Use system default */);
-
-    printf("spawning scheduler...\n");
+    printf("spawning thread...\n");
 #ifdef ETHR_MODIFIED_DEFAULT_STACK_SIZE
     if (use_stack_size < 0)
 	use_stack_size = ETHR_MODIFIED_DEFAULT_STACK_SIZE;
@@ -314,6 +313,7 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
     }
 #endif
 
+    printf("mark 1...\n");
     ethr_atomic32_init(&twd.result, (ethr_sint32_t) -1);
     twd.tse = ethr_get_ts_event();
     twd.thr_func = func;
@@ -326,10 +326,12 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
     /* Error cleanup needed after this point */
 
     /* Schedule child thread in system scope (if possible) ... */
+    printf("mark 2...\n");
     res = pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
     if (res != 0 && res != ENOTSUP)
 	goto error;
 
+    printf("mark 3...\n");
     if (use_stack_size >= 0) {
 	size_t suggested_stack_size = (size_t) use_stack_size;
 	size_t stack_size;
@@ -349,6 +351,7 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
 	    stack_size = ETHR_PAGE_ALIGN(ETHR_KW2B(suggested_stack_size));
 	(void) pthread_attr_setstacksize(&attr, stack_size);
     }
+    printf("mark 4...\n");
 
 #ifdef ETHR_STACK_GUARD_SIZE
     (void) pthread_attr_setguardsize(&attr, ETHR_STACK_GUARD_SIZE);
@@ -362,6 +365,7 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
     if (res != 0)
 	goto error;
 
+    printf("mark 5...\n");
     /* Call prepare func if it exist */
     if (ethr_thr_prepare_func__)
 	twd.prep_func_res = ethr_thr_prepare_func__();
@@ -371,6 +375,7 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
     res = pthread_create((pthread_t *) tid, &attr, thr_wrapper, (void*) &twd);
 
     if (res == 0) {
+    printf("mark 6...\n");
 	int spin_count = child_wait_spin_count;
 
 	/* Wait for child to initialize... */
@@ -394,14 +399,19 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
 	}
     }
 
+    printf("spawned thread...\n");
     /* Cleanup... */
 
  error:
     dres = pthread_attr_destroy(&attr);
     if (res == 0)
 	res = dres;
-    if (ethr_thr_parent_func__)
+    if (ethr_thr_parent_func__) {
+        printf("pre-strange...\n");
 	ethr_thr_parent_func__(twd.prep_func_res);
+        printf("post-strange...\n");
+    }
+    printf("done.\n");
     return res;
 }
 

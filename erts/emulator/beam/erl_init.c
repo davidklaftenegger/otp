@@ -877,10 +877,10 @@ early_init(int *argc, char **argv) /*
 #endif
 
     erl_sys_args(argc, argv);
-
+	printf("next: sys_init\n");
     /* Creates threads on Windows that depend on the arguments, so has to be after erl_sys_args */
     erl_sys_init();
-
+	printf("sys_init done\n");
     erts_ets_realloc_always_moves = 0;
     erts_ets_always_compress = 0;
     erts_dist_buf_busy_limit = ERTS_DE_BUSY_LIMIT;
@@ -1576,8 +1576,9 @@ erl_start(int argc, char **argv)
 #ifdef ERTS_SMP
     erts_start_schedulers();
     /* Let system specific code decide what to do with the main thread... */
-
+	printf("start sys main thread next\n");
     erts_sys_main_thread(); /* May or may not return! */
+	printf("sys main thread returned\n");
 #else
     erts_thr_set_main_status(1, 1);
 #if ERTS_USE_ASYNC_READY_Q

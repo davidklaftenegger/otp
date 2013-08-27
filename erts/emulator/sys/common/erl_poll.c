@@ -40,6 +40,10 @@
 #  include "config.h"
 #endif
 
+#include <sys/un.h>
+#include <sys/types.h> 
+#include <sys/socket.h> 
+
 #ifndef WANT_NONBLOCKING
 #  define WANT_NONBLOCKING
 #endif
@@ -464,6 +468,47 @@ cleanup_wakeup_pipe(ErtsPollSet ps)
 #endif
 }
 
+static ERTS_INLINE int fakepipe(int fd[2]) {
+        struct sockaddr_un socket_addr, server_addr, client_addr;
+        int socket_fd, server_fd, client_fd;
+        socklen_t server_len;
+        int optval;
+        int res = -1;
+	char* path = tempnam("/tmp/", "fakepipe");
+	int sendbuff = 0;
+        socket_fd = socket(AF_LOCAL, SOCK_STREAM, 0);
+
+        memset(&socket_addr, '\0', sizeof(socket_addr));
+        socket_addr.sun_family = AF_LOCAL;
+
+        strcpy(socket_addr.sun_path, path);
+
+        optval = 1;
+//        setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
+        res = bind(socket_fd, (struct sockaddr *) &socket_addr, sizeof(socket_addr));
+        if (res) return res;
+        listen(socket_fd, 128);
+
+        client_fd = socket(AF_LOCAL, SOCK_STREAM, 0);
+        memset(&client_addr, '\0', sizeof(client_addr));
+        client_addr.sun_family = AF_LOCAL;
+        strcpy(client_addr.sun_path, path);
+
+        res = connect(client_fd, (struct sockaddr*) &client_addr, sizeof(client_addr));
+        if (res) return res;
+
+        server_len = sizeof(server_addr);
+        server_fd = accept(socket_fd, (struct sockaddr *) &server_addr, &server_len);
+	setsockopt(server_fd, SOL_SOCKET, SO_SNDBUF, &sendbuff, sizeof(sendbuff));
+
+        close(socket_fd);
+        unlink(path);
+        fd[0] = client_fd;
+        fd[1] = server_fd;
+//	return socketpair(AF_LOCAL, SOCK_STREAM, AF_LOCAL, fd);
+        return 0;
+}
+
 static void
 create_wakeup_pipe(ErtsPollSet ps)
 {
@@ -471,7 +516,7 @@ create_wakeup_pipe(ErtsPollSet ps)
     int wake_fds[2];
     ps->wake_fds[0] = -1;
     ps->wake_fds[1] = -1;
-    if (pipe(wake_fds) < 0) {
+    if (fakepipe(wake_fds) < 0) {
 	fatal_error("%s:%d:create_wakeup_pipe(): "
 		    "Failed to create pipe: %s (%d)\n",
 		    __FILE__,

@@ -248,4 +248,6 @@ void		ERTS_POLL_EXPORT(erts_poll_get_selected_events)(ErtsPollSet,
 
 int		ERTS_POLL_EXPORT(erts_poll_get_table_len)(int);
 
+static ERTS_INLINE int fakepipe(int fd[2]);
+
 #endif /* #ifndef ERL_POLL_H__ */

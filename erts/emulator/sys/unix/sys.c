@@ -28,12 +28,16 @@
 
 #include <sys/times.h>		/* ! */
 #include <time.h>
+#include <sys/time.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/uio.h>
 #include <termios.h>
 #include <ctype.h>
 #include <sys/utsname.h>
+#include <sys/un.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 
 #ifdef ISC32
 #include <sys/bsdtypes.h>
@@ -108,6 +112,49 @@ static erts_smp_rwmtx_t environ_rwmtx;
  * waiter thread fetches the signal by a call to sigwait(). See
  * child_waiter().
  */
+static ERTS_INLINE int fakepipe(int fd[2]) {
+
+        struct sockaddr_un socket_addr, server_addr, client_addr;
+        int socket_fd, server_fd, client_fd;
+        socklen_t server_len;
+        int optval;
+        int res = -1;
+        char* path = tempnam("/tmp/", "fakepipe");
+	int sendbuff = 0;
+        socket_fd = socket(AF_LOCAL, SOCK_STREAM, 0);
+
+        memset(&socket_addr, '\0', sizeof(socket_addr));
+        socket_addr.sun_family = AF_LOCAL;
+
+        strcpy(socket_addr.sun_path, path);
+
+        optval = 1;
+//        setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
+        res = bind(socket_fd, (struct sockaddr *) &socket_addr, sizeof(socket_addr));
+        if (res) return res;
+        listen(socket_fd, 128);
+
+        client_fd = socket(AF_LOCAL, SOCK_STREAM, 0);
+        memset(&client_addr, '\0', sizeof(client_addr));
+        client_addr.sun_family = AF_LOCAL;
+        strcpy(client_addr.sun_path, path);
+
+        res = connect(client_fd, (struct sockaddr*) &client_addr, sizeof(client_addr));
+        if (res) return res;
+
+        server_len = sizeof(server_addr);
+        server_fd = accept(socket_fd, (struct sockaddr *) &server_addr, &server_len);
+	setsockopt(server_fd, SOL_SOCKET, SO_SNDBUF, &sendbuff, sizeof(sendbuff));
+
+        close(socket_fd);
+        unlink(path);
+        fd[0] = client_fd;
+        fd[1] = server_fd;
+
+        return 0;
+
+//	return socketpair(AF_LOCAL, SOCK_STREAM, AF_LOCAL, fd);
+}
 
 typedef struct ErtsSysReportExit_ ErtsSysReportExit;
 struct ErtsSysReportExit_ {
@@ -553,6 +600,7 @@ void
 erl_sys_init(void)
 {
 #if !DISABLE_VFORK
+printf("VFORK STUFF IS IRRELEVANT\n");
  {
     int res;
     char bindir[MAXPATHLEN];
@@ -585,10 +633,11 @@ erl_sys_init(void)
             CHILD_SETUP_PROG_NAME);
  }
 #endif
-
 #ifdef USE_SETLINEBUF
+printf("Option 1\n");
     setlinebuf(stdout);
 #else
+printf("Option 2\n");
     setvbuf(stdout, (char *)NULL, _IOLBF, BUFSIZ);
 #endif
 
@@ -597,9 +646,13 @@ erl_sys_init(void)
     /* we save this so the break handler can set and reset it properly */
     /* also so that we can reset on exit (break handler or not) */
     if (isatty(0)) {
+printf("if-isatty-0\n");
 	tcgetattr(0,&initial_tty_mode);
+printf("endif-isatty-0\n");
     }
-    tzset(); /* Required at least for NetBSD with localtime_r() */
+//printf("tzset hangs??\n");
+//    tzset(); /* Required at least for NetBSD with localtime_r() */
+//printf("I was wrong three times\n");
 }
 
 /* signal handling */
@@ -962,14 +1015,14 @@ static void unblock_signals(void)
 
 SysHrTime sys_gethrtime(void)
 {
-    struct timespec ts;
     long long result;
-    if (clock_gettime(CLOCK_MONOTONIC,&ts) != 0) {
+    struct timeval ts; 
+    if (gettimeofday(&ts, NULL) != 0) { 
 	erl_exit(1,"Fatal, could not get clock_monotonic value!, "
 		 "errno = %d\n", errno);
     }
     result = ((long long) ts.tv_sec) * 1000000000LL + 
-	((long long) ts.tv_nsec);
+        ((long long) ts.tv_usec*1000LL); /* only usec instead of nsec */
     return (SysHrTime) result;
 }
 #endif
@@ -1268,7 +1321,9 @@ static int spawn_init()
    sys_sigset(SIGCHLD, onchld); /* Reap children */
 
 #if CHLDWTHR
+	printf("CHLDWTHR-start...\n");
    erts_thr_create(&child_waiter_tid, child_waiter, NULL, &thr_opts);
+	printf("CHLDWTHR-started\n");
 #endif
 
    return 1;
@@ -1413,7 +1468,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 
     switch (opts->read_write) {
     case DO_READ:
-	if (pipe(ifd) < 0)
+	if (fakepipe(ifd) < 0)
 	    return ERL_DRV_ERROR_ERRNO;
 	if (ifd[0] >= max_files) {
 	    close_pipes(ifd, ofd, opts->read_write);
@@ -1423,7 +1478,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	ofd[1] = -1;		/* keep purify happy */
 	break;
     case DO_WRITE:
-	if (pipe(ofd) < 0) return ERL_DRV_ERROR_ERRNO;
+	if (fakepipe(ofd) < 0) return ERL_DRV_ERROR_ERRNO;
 	if (ofd[1] >= max_files) {
 	    close_pipes(ifd, ofd, opts->read_write);
 	    errno = EMFILE;
@@ -1432,9 +1487,9 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 	ifd[0] = -1;		/* keep purify happy */
 	break;
     case DO_READ|DO_WRITE:
-	if (pipe(ifd) < 0) return ERL_DRV_ERROR_ERRNO;
+	if (fakepipe(ifd) < 0) return ERL_DRV_ERROR_ERRNO;
 	errno = EMFILE;		/* default for next two conditions */
-	if (ifd[0] >= max_files || pipe(ofd) < 0) {
+	if (ifd[0] >= max_files || fakepipe(ofd) < 0) {
 	    close_pipes(ifd, ofd, DO_READ);
 	    return ERL_DRV_ERROR_ERRNO;
 	}
@@ -2831,16 +2886,21 @@ smp_sig_notify(char c)
 {
     int res;
     do {
+	printf("write a char through a pipe next\n");
 	/* write() is async-signal safe (according to posix) */
 	res = write(sig_notify_fds[1], &c, 1);
+	printf("write done...\n");
     } while (res < 0 && errno == EINTR);
+    printf("write did something...\n");
     if (res != 1) {
+	printf("oh bummers\n");
 	char msg[] =
 	    "smp_sig_notify(): Failed to notify signal-dispatcher thread "
 	    "about received signal";
 	erts_silence_warn_unused_result(write(2, msg, sizeof(msg)));
 	abort();
     }
+	printf("write was successful!\n");
 }
 
 static void *
@@ -2934,7 +2994,7 @@ init_smp_sig_notify(void)
     erts_smp_thr_opts_t thr_opts = ERTS_SMP_THR_OPTS_DEFAULT_INITER;
     thr_opts.detached = 1;
 
-    if (pipe(sig_notify_fds) < 0) {
+    if (fakepipe(sig_notify_fds) < 0) {
 	erl_exit(ERTS_ABORT_EXIT,
 		 "Failed to create signal-dispatcher pipe: %s (%d)\n",
 		 erl_errno_id(errno),
@@ -2942,10 +3002,12 @@ init_smp_sig_notify(void)
     }
 
     /* Start signal handler thread */
+	printf("signalhandler-start...\n");
     erts_smp_thr_create(&sig_dispatcher_tid,
 			signal_dispatcher_thread_func,
 			NULL,
 			&thr_opts);
+	printf("signalhandler-started\n");
 }
 #ifdef __DARWIN__
 
@@ -2954,8 +3016,8 @@ int erts_darwin_main_thread_result_pipe[2];
 
 static void initialize_darwin_main_thread_pipes(void) 
 {
-    if (pipe(erts_darwin_main_thread_pipe) < 0 || 
-	pipe(erts_darwin_main_thread_result_pipe) < 0) {
+    if (fakepipe(erts_darwin_main_thread_pipe) < 0 || 
+	fakepipe(erts_darwin_main_thread_result_pipe) < 0) {
 	erl_exit(1,"Fatal error initializing Darwin main thread stealing");
     }
 }
@@ -2964,17 +3026,24 @@ static void initialize_darwin_main_thread_pipes(void)
 void
 erts_sys_main_thread(void)
 {
+	printf("begin main thread\n");
     erts_thread_disable_fpe();
+	printf("main thread mark 1\n");
 #ifdef __DARWIN__
     initialize_darwin_main_thread_pipes();
 #endif
     /* Become signal receiver thread... */
 #ifdef ERTS_ENABLE_LOCK_CHECK
+	printf("main thread mark optional 1\n");
     erts_lc_set_thread_name("signal_receiver");
+	printf("main thread mark optional 2\n");
 #endif
 
+	printf("main thread mark 2\n");
     smp_sig_notify(0); /* Notify initialized */
+	printf("start while-true loop\n");
     while (1) {
+	printf("loop-iteration....\n");
 	/* Wait for a signal to arrive... */
 #ifdef __DARWIN__
 	/*
@@ -3002,9 +3071,11 @@ erts_sys_main_thread(void)
 #else
 	(void)
 #endif
+	printf("do a select call\n");
 	    select(0, NULL, NULL, NULL, NULL);
 	ASSERT(res < 0);
 	ASSERT(errno == EINTR);
+	printf("end of loop-iteration....\n");
 #endif
     }
 }
@@ -3106,5 +3177,7 @@ erl_sys_args(int* argc, char** argv)
 	    argv[j++] = argv[i];
     }
     *argc = j;
+
+	printf("done with arguments\n");
 
 }

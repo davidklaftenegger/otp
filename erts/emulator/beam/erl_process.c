@@ -5664,6 +5664,7 @@ erts_start_schedulers(void)
 	actual++;
 	ASSERT(actual == esdp->no);
 	res = ethr_thr_create(&esdp->tid,sched_thread_func,(void*)esdp,&opts);
+	printf("ERTS STARTED A SCHEDULER\n");
 	if (res != 0) {
 	    actual--;
 	    break;
@@ -5673,8 +5674,9 @@ erts_start_schedulers(void)
     erts_no_schedulers = actual;
 
     ERTS_THR_MEMORY_BARRIER;
-
+	printf("starting aux next\n");
     res = ethr_thr_create(&aux_tid, aux_thread, NULL, &opts);
+	printf("AUX STARTED\n");
     if (res != 0)
 	erl_exit(1, "Failed to create aux thread\n");
 
@@ -5693,6 +5695,7 @@ erts_start_schedulers(void)
 		      actual, actual == 1 ? " was" : "s were");
 	erts_send_error_to_logger_nogl(dsbufp);
     }
+	printf("schedulers start complete\n");
 }
 
 #endif /* ERTS_SMP */

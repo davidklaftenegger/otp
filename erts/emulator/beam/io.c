@@ -7367,6 +7367,7 @@ no_stop_select_callback(ErlDrvEvent event, void* private)
 static int
 init_driver(erts_driver_t *drv, ErlDrvEntry *de, DE_Handle *handle)
 {
+	printf("init driver start\n");
     drv->name = de->driver_name;
     ASSERT(de->extended_marker == ERL_DRV_EXTENDED_MARKER);
     ASSERT(de->major_version >= 2);
@@ -7414,8 +7415,11 @@ init_driver(erts_driver_t *drv, ErlDrvEntry *de, DE_Handle *handle)
     else
 	drv->stop_select = no_stop_select_callback;
 
-    if (!de->init)
+	printf("init driver nearly-done\n");
+    if (!de->init) {
+	printf("init driver not init end\n");
 	return 0;
+}
     else {
 	int res;
 	int fpe_was_unmasked = erts_block_fpe();
@@ -7423,6 +7427,7 @@ init_driver(erts_driver_t *drv, ErlDrvEntry *de, DE_Handle *handle)
                 drv->flags);
 	res = (*de->init)();
 	erts_unblock_fpe(fpe_was_unmasked);
+	printf("init driver init end\n");
 	return res;
     }
 }
